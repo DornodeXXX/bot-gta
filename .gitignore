@@ -1,0 +1,7 @@
+logs.txt
+build
+build_temp
+/pages/__pycache__
+/widgets/__pycache__
+ViGEmBus_1.22.0_x64_x86_arm64.exe
+compil.bat
