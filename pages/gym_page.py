@@ -69,9 +69,10 @@ class GymWorker(QtCore.QThread):
         self._count = 0
         self.template = self._load_template()
         self.monitor = self._auto_detect_region()
+        self.last_action_time = time.time()
 
     def _load_template(self):
-        template = cv2.imread('assets/gym/circle.png', cv2.IMREAD_UNCHANGED)
+        template = cv2.imread('assets/gym/ring2.png', cv2.IMREAD_UNCHANGED)
         if template is None:
             raise FileNotFoundError("Файл шаблона не найден!")
         return template[:, :, :3]
@@ -80,32 +81,16 @@ class GymWorker(QtCore.QThread):
         screen_width, screen_height = pyautogui.size()
         region_width = int(screen_width * 0.3)
         region_height = int(screen_height * 0.3)
+        
         vertical_position_ratio = 0.5
+        
         return {
             'left': int((screen_width - region_width) / 2),
             'top': int(screen_height * vertical_position_ratio),
             'width': region_width,
             'height': region_height
         }
-
-    def _analyze_match(self, frame, location):
-        x, y = location
-        h, w = self.template.shape[:2]
         
-        margin = 4
-        x1 = max(0, x - margin)
-        y1 = max(0, y - margin)
-        x2 = min(frame.shape[1], x + w + margin)
-        y2 = min(frame.shape[0], y + h + margin)
-        
-        search_area = frame[y1:y2, x1:x2]
-        
-        white_pixels = np.all(search_area >= 245, axis=2)
-        white_count = np.sum(white_pixels)
-        
-        required_white = 10
-        #self.log(f"Белых: {white_count}/{required_white}")
-        return white_count >= required_white
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
@@ -118,7 +103,6 @@ class GymWorker(QtCore.QThread):
         with mss.mss() as sct:
             self.log("Скрипт качалки запущен. Нажми ESC для остановки.")
             self.log(f"Область поиска: {self.monitor}")
-            self.log(f"Шаблон: {self.template.shape} (h, w)")
             
             try:
                 while self._running:
@@ -128,18 +112,23 @@ class GymWorker(QtCore.QThread):
                         break
 
                     frame = np.array(sct.grab(self.monitor))
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR) if frame.shape[2] == 4 else frame
 
                     res = cv2.matchTemplate(frame_rgb, self.template, cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, max_loc = cv2.minMaxLoc(res)
 
-                    if max_val >= 0.87:
-                        if self._analyze_match(frame_rgb, max_loc):
-                            self._count += 1
-                            self.log(f"[✓] Нашёл мини-игру! (#{self._count})")
-                            self.counter_signal.emit(self._count)
-                            keyboard.press_and_release("space")
+                    if max_val >= 0.89:
+                        self._count += 1
+                        self.log(f"[✓] Найдено совпадение ({max_val:.2f}) - нажимаем SPACE (#{self._count})")
+                        self.counter_signal.emit(self._count)
+                        keyboard.press_and_release("space")
+                        self.last_action_time = time.time()
+                    elif time.time() - self.last_action_time >= 5:
+                        self.log("[!] 5 секунд без действия - нажимаем E")
+                        keyboard.press_and_release("e")
+                        self.last_action_time = time.time()
 
+                    time.sleep(0.01)
                     
             except Exception as exc:
                 self.log(f"[Ошибка потока] {str(exc)}")
