@@ -28,7 +28,7 @@ class GymPage(QtWidgets.QWidget):
         layout.addLayout(switch_layout)
         
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
-        self.counter_label.setStyleSheet("color: white; font-size: 14px;background: none;")
+        self.counter_label.setObjectName("counter_label")
         layout.addWidget(self.counter_label)
         layout.addStretch()
         
@@ -117,7 +117,7 @@ class GymWorker(QtCore.QThread):
                     res = cv2.matchTemplate(frame_rgb, self.template, cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, max_loc = cv2.minMaxLoc(res)
 
-                    if max_val >= 0.89:
+                    if max_val >= 0.95:
                         self._count += 1
                         self.log(f"[✓] Найдено совпадение ({max_val:.2f}) - нажимаем SPACE (#{self._count})")
                         self.counter_signal.emit(self._count)

@@ -32,20 +32,6 @@ class GotovkaPage(QtWidgets.QWidget):
         self.dish_combo = QtWidgets.QComboBox()
         self.dish_combo.addItems(["Фруктовый смузи", "Фруктовый салат", "Овощной салат", "Овощной смузи"])
         self.dish_combo.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
-        self.dish_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #333;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                min-width: 120px;
-            }
-
-            QComboBox QAbstractItemView {
-                background-color: #333;
-                color: white;
-            }
-        """)
 
         dish_layout.addWidget(dish_label)
         dish_layout.addWidget(self.dish_combo)
@@ -114,7 +100,6 @@ class GotovkaWorker(QtCore.QThread):
             return False
 
     def _find_all_required_images(self):
-        """Проверяет наличие всех необходимых изображений для текущего блюда"""
         required_images = []
         
         if self.dish_name == "Фруктовый смузи":
@@ -144,7 +129,6 @@ class GotovkaWorker(QtCore.QThread):
                 ("assets/cook/startCoocking.png", self._click_image)
             ]
 
-        # Проверяем все изображения
         all_found = True
         for img_path, action in required_images:
             try:
@@ -159,7 +143,6 @@ class GotovkaWorker(QtCore.QThread):
         if not all_found:
             return False
             
-        # Если все изображения найдены, выполняем действия
         for img_path, action in required_images:
             if not action(img_path):
                 return False

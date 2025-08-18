@@ -30,7 +30,6 @@ class AntiAfkPage(QtWidgets.QWidget):
         for slider in [self.min_delay_slider, self.max_delay_slider, self.min_pause_slider, self.max_pause_slider]:
             slider.setMinimum(5)
             slider.setMaximum(100)
-            slider.setStyleSheet(self.get_slider_style())
             slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
         self.min_delay_slider.setValue(10)
@@ -73,37 +72,6 @@ class AntiAfkPage(QtWidgets.QWidget):
         self.log_output = CommonLogger.create_log_field(layout)
 
         self.setLayout(layout)
-
-
-
-    def get_slider_style(self):
-        return """
-            QSlider::groove:horizontal {
-                border: none;
-                height: 4px;
-                background: #ccc;
-                border-radius: 20px;
-            }
-
-            QSlider::sub-page:horizontal {
-                background: #007aff;
-                border-radius: 6px;
-            }
-
-            QSlider::add-page:horizontal {
-                background: #ccc;
-                border-radius: 6px;
-            }
-
-            QSlider::handle:horizontal {
-                background: white;
-                width: 20px;
-                height: 20px;
-                margin: -8px 0;
-                border-radius: 10px;
-
-            }
-        """
 
     def create_slider_row(self, label_text, slider, value_label):
         row = QtWidgets.QHBoxLayout()

@@ -1,6 +1,9 @@
 import sys
 import os
 from functools import partial
+import urllib.request
+import urllib.error
+import webbrowser
 from PyQt5 import QtWidgets, QtCore, QtGui
 from widgets.switch_button import SwitchButton
 from pages.index_page import IndexPage
@@ -12,45 +15,15 @@ from pages.gotovka_page import GotovkaPage
 from pages.cow_page import CowPage
 from pages.gym_page import GymPage
 
-ENABLED_BUTTON_STYLE = """
-QPushButton {
-    background-color: #2e2e2e;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-size: 14px;
-    text-align: left;
-    padding-left:15px;
-    width:150px;
-}
-QPushButton:hover {
-    background-color: #444;
-}
-QPushButton:checked {
-    background-color: #2e2e2e;
-    border-left: 4px solid #00aaff;
-    border-radius: 10px;
-    padding-left: 11px;
-}"""
-
-DISABLED_BUTTON_STYLE = """
-QPushButton {
-    background-color: #222;
-    color: gray;
-    border: none;
-    border-radius: 10px;
-    font-size: 14px;
-    text-align: left;
-    padding-left: 15px;
-}"""
-
 class BotMasterApp(QtWidgets.QWidget):
+    CURRENT_VERSION = "2.5"
+
     def __init__(self):
         super().__init__()
         self.setup_ui()
         self.setup_window_properties()
-        self.setup_menu()
-        self.setup_pages()
+        self.setup_menu_and_pages()
+        self.check_for_updates()
         
     def setup_ui(self):
         self.setWindowTitle("BOT [GTA5RP]")
@@ -63,12 +36,7 @@ class BotMasterApp(QtWidgets.QWidget):
         main_layout.setContentsMargins(10, 10, 10, 10)
         
         self.container = QtWidgets.QFrame()
-        self.container.setStyleSheet("""
-            QFrame {
-                background-color: rgba(18, 18, 20, 200);
-                border-radius: 20px;
-            }
-        """)
+        self.container.setObjectName("container")
         
         shadow = QtWidgets.QGraphicsDropShadowEffect()
         shadow.setBlurRadius(25)
@@ -90,11 +58,7 @@ class BotMasterApp(QtWidgets.QWidget):
         self.menu_layout.setSpacing(10)
         
         self.stack = QtWidgets.QStackedWidget()
-        self.stack.setStyleSheet("""
-            background-color: rgba(26, 26, 30, 180); 
-            border-radius: 10px; 
-            color: white;
-        """)
+        self.stack.setObjectName("stack")
         
         content_layout.addLayout(self.menu_layout, 1)
         content_layout.addWidget(self.stack, 3)
@@ -111,12 +75,8 @@ class BotMasterApp(QtWidgets.QWidget):
     
     def setup_title_bar(self):
         self.title_bar = QtWidgets.QFrame()
+        self.title_bar.setObjectName("titleBar")
         self.title_bar.setFixedHeight(40)
-        self.title_bar.setStyleSheet("""
-            background-color: rgba(18, 18, 20, 220); 
-            border-top-left-radius: 20px; 
-            border-top-right-radius: 20px;
-        """)
         
         title_bar_layout = QtWidgets.QHBoxLayout(self.title_bar)
         title_bar_layout.setContentsMargins(17, 0, 17, 0)
@@ -128,11 +88,7 @@ class BotMasterApp(QtWidgets.QWidget):
         icon_label.setFixedSize(20, 20)
         
         self.title_label = QtWidgets.QLabel("BOT [GTA5RP]")
-        self.title_label.setStyleSheet("""
-            color: white; 
-            font-size: 16px; 
-            margin-left: 5px;
-        """)
+        self.title_label.setObjectName("titleLabel")
         
         title_with_icon = QtWidgets.QHBoxLayout()
         title_with_icon.addWidget(icon_label)
@@ -155,24 +111,15 @@ class BotMasterApp(QtWidgets.QWidget):
     
     def create_window_button(self, text, action):
         btn = QtWidgets.QPushButton(text)
+        btn.setObjectName("windowButton")
         btn.setFixedSize(24, 24)
-        btn.setStyleSheet("""
-            QPushButton {
-                color: white;
-                background-color: transparent;
-                border: none;
-                font-size: 18px;
-            }
-            QPushButton:hover {
-                background-color: red;
-                border-radius: 12px;
-            }
-        """)
         btn.clicked.connect(action)
         return btn
     
-    def setup_menu(self):
+    def setup_menu_and_pages(self):
         self.menu_buttons = {}
+        self.pages = {}
+        
         features = [
             ("Главная", "📇", IndexPage, True),
             ("Швейка", "👕", ShveikaPage, True),
@@ -184,49 +131,48 @@ class BotMasterApp(QtWidgets.QWidget):
             ("Кулинария", "🍜", GotovkaPage, True),
         ]
         
-        for name, emoji, _, enabled in features:
+        menu_buttons_layout = QtWidgets.QVBoxLayout()
+        menu_buttons_layout.setSpacing(10)
+        
+        for name, emoji, page_class, enabled in features:
             btn = self.create_menu_button(f"{emoji} {name}", enabled)
             self.menu_buttons[name] = btn
-            self.menu_layout.addWidget(btn)
+            menu_buttons_layout.addWidget(btn)
+            
+            if enabled:
+                if name == "Главная":
+                    self.pages[name] = page_class(version=self.CURRENT_VERSION)
+                else:
+                    self.pages[name] = page_class()
+                self.stack.addWidget(self.pages[name])
+                btn.clicked.connect(partial(self.switch_tab, name, btn))
         
+        self.update_btn = self.create_menu_button("🔄 Доступна новая версия", True)
+        self.update_btn.setObjectName("updateButton")
+        self.update_btn.clicked.connect(self.open_updates)
+        self.update_btn.hide()
+        
+        update_layout = QtWidgets.QVBoxLayout()
+        update_layout.setSpacing(10)
+        update_layout.addWidget(self.update_btn)
+        
+        self.menu_layout.addLayout(menu_buttons_layout)
         self.menu_layout.addStretch()
+        self.menu_layout.addLayout(update_layout)
+        
+        if "Главная" in self.pages:
+            self.stack.setCurrentWidget(self.pages["Главная"])
+            self.menu_buttons["Главная"].setChecked(True)
+            self.current_button = self.menu_buttons["Главная"]
     
     def create_menu_button(self, text, enabled=True):
         btn = QtWidgets.QPushButton(text)
         btn.setFixedHeight(40)
         btn.setCheckable(True)
         btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        
-        if enabled:
-            btn.setStyleSheet(ENABLED_BUTTON_STYLE)
-        else:
-            btn.setEnabled(False)
-            btn.setStyleSheet(DISABLED_BUTTON_STYLE)
-        
+        btn.setObjectName("menuButton" if enabled else "disabledMenuButton")
+        btn.setEnabled(enabled)
         return btn
-    
-    def setup_pages(self):
-        self.pages = {
-            "Главная": IndexPage(),
-            "Швейка": ShveikaPage(),
-            "Качалка": GymPage(),
-            "Стройка|Шахта": StroykaPage(),
-            "Порт": PortPage(),
-            "Коровы": CowPage(),
-            "Анти-АФК": AntiAfkPage(),
-            "Кулинария": GotovkaPage(),
-        }
-        
-        for name, page in self.pages.items():
-            self.stack.addWidget(page)
-            if name in self.menu_buttons and self.menu_buttons[name].isEnabled():
-                self.menu_buttons[name].clicked.connect(
-                    partial(self.switch_tab, name, self.menu_buttons[name])
-                )
-        
-        self.stack.setCurrentWidget(self.pages["Главная"])
-        self.menu_buttons["Главная"].setChecked(True)
-        self.current_button = self.menu_buttons["Главная"]
     
     def title_mouse_press(self, event):
         if event.button() == QtCore.Qt.LeftButton:
@@ -242,6 +188,34 @@ class BotMasterApp(QtWidgets.QWidget):
             self.current_button.setChecked(False)
         button.setChecked(True)
         self.current_button = button
+    
+    
+    def open_updates(self):
+        webbrowser.open("https://github.com/DornodeXXX/bot-gta/releases")
+    
+    def check_for_updates(self):
+        try:
+            version_url = "https://raw.githubusercontent.com/DornodeXXX/bot-gta/main/version.txt"
+            with urllib.request.urlopen(version_url, timeout=5) as response:
+                latest_version = response.read().decode('utf-8').strip()
+                
+                if latest_version > self.CURRENT_VERSION:
+                    self.update_btn.show()
+                    reply = QtWidgets.QMessageBox.question(
+                        self,
+                        "Обновление доступно",
+                        f"Доступна новая версия {latest_version}!\nТекущая версия: {self.CURRENT_VERSION}\nХотите скачать?",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+                    )
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        github_url = "https://github.com/DornodeXXX/bot-gta/releases"
+                        webbrowser.open(github_url)
+        except urllib.error.URLError as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось проверить обновления: {str(e)}"
+            )
 
 if __name__ == "__main__":
     if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
@@ -251,6 +225,9 @@ if __name__ == "__main__":
     
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle("Fusion")
+    
+    with open("styles.qss", "r") as file:
+        app.setStyleSheet(file.read())
     
     window = BotMasterApp()
     window.show()

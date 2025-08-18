@@ -2,8 +2,9 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QUrl
 from PyQt5.QtGui import QDesktopServices
 
+
 class IndexPage(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self, version):
         super().__init__()
         self.setStyleSheet("background-color: rgba(26, 26, 30, 180);")
         
@@ -44,7 +45,7 @@ class IndexPage(QtWidgets.QWidget):
         layout.addWidget(discord_label)
         layout.addStretch()
 
-        version_label = QtWidgets.QLabel("Версия: 2.3")
+        version_label = QtWidgets.QLabel(f"Версия: {version}")
         version_label.setStyleSheet("color: gray; font-size: 12px;background: none;")
         version_label.setAlignment(QtCore.Qt.AlignRight)
         layout.addWidget(version_label)

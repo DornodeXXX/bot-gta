@@ -37,11 +37,11 @@ class PortPage(QtWidgets.QWidget):
         layout.addLayout(hotkey_layout)
         
         hotkey_description = QtWidgets.QLabel("— вкл/выкл Shift+W")
-        hotkey_description.setStyleSheet("color: white; font-size: 12px; padding-right:150px;background: none;")
+        hotkey_description.setObjectName("hotkey_description")
         hotkey_layout.addWidget(hotkey_description)
         
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
-        self.counter_label.setStyleSheet("color: white; font-size: 14px;background: none;")
+        self.counter_label.setObjectName("counter_label")
         layout.addWidget(self.counter_label)
         layout.addStretch()
         

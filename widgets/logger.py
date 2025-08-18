@@ -81,6 +81,7 @@ class CommonLogger:
     def create_log_field(layout):
         log_field = QtWidgets.QTextEdit()
         log_field.setReadOnly(True)
+        log_field.setObjectName("logField")
         log_field.setStyleSheet("background-color: black; color: white; font-family: monospace;")
         log_field.setFixedHeight(240)
         layout.addWidget(log_field)
