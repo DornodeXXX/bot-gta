@@ -110,10 +110,8 @@ QComboBox QAbstractItemView {
 }
 
 QLabel#hotkey_description {
-	color: white; 
-	font-size: 12px; 
-	padding-right:150px;
-	background: none;
+    color: white;
+    font-size: 12px;
 }
 
 QLabel#counter_label {

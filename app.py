@@ -16,7 +16,7 @@ from pages.cow_page import CowPage
 from pages.gym_page import GymPage
 
 class BotMasterApp(QtWidgets.QWidget):
-    CURRENT_VERSION = "2.5"
+    CURRENT_VERSION = "2.6"
 
     def __init__(self):
         super().__init__()
@@ -126,7 +126,7 @@ class BotMasterApp(QtWidgets.QWidget):
             ("Качалка", "🏋️", GymPage, True),
             ("Стройка|Шахта", "🚧", StroykaPage, True),
             ("Порт", "🚢", PortPage, True),
-            ("Коровы", "🐄", CowPage, False),
+            ("Коровы", "🐄", CowPage, True),
             ("Анти-АФК", "🎯", AntiAfkPage, True),
             ("Кулинария", "🍜", GotovkaPage, True),
         ]

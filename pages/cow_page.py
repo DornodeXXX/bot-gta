@@ -3,8 +3,9 @@ from widgets.switch_button import SwitchButton
 import time
 import keyboard
 import pyautogui
-import random
-import ctypes
+import cv2
+import numpy as np
+import mss
 from widgets.logger import CommonLogger
 
 
@@ -25,33 +26,47 @@ class CowPage(QtWidgets.QWidget):
         switch_layout.addStretch()
         switch_layout.addWidget(self.switch)
         layout.addLayout(switch_layout)
-
-        hotkey_layout = QtWidgets.QHBoxLayout()
-        self.hotkey_input = QtWidgets.QLineEdit("f6")
-        self.hotkey_input.setMaxLength(20)
-        self.hotkey_input.setFixedWidth(100)
-        self.hotkey_input.setStyleSheet("background-color: #222; color: white;")
-
-        hotkey_layout.addWidget(CommonLogger._make_label("Горячая клавиша:", 14))
-        hotkey_layout.addWidget(self.hotkey_input)
-        hotkey_layout.addStretch()
-        layout.addLayout(hotkey_layout)
-
-        hotkey_description = QtWidgets.QLabel("— вкл/выкл скрипта")
-        hotkey_description.setStyleSheet("color: white; font-size: 12px; padding-right:150px;background: none;")
-        hotkey_layout.addWidget(hotkey_description)
-
+        
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
-        self.counter_label.setStyleSheet("color: white; font-size: 14px;background: none;")
+        self.counter_label.setObjectName("counter_label")
+        
+        '''hotkey_layout = QtWidgets.QHBoxLayout()
+        hotkey_layout.setContentsMargins(0, 0, 0, 0)
+        hotkey_layout.setSpacing(5)
+        
+        input_group = QtWidgets.QHBoxLayout()
+        input_group.setSpacing(5)
+        input_group.setContentsMargins(0, 0, 0, 0)
+        
+        self.hotkey_input = QtWidgets.QLineEdit("f5")
+        self.hotkey_input.setMaxLength(20)
+        self.hotkey_input.setFixedWidth(50)
+        self.hotkey_input.setAlignment(QtCore.Qt.AlignCenter)
+        self.hotkey_input.setStyleSheet("""
+            background-color: #222; 
+            color: white;
+            font-size: 12px;
+        """)
+        
+        hotkey_description = QtWidgets.QLabel("— вкл/выкл автонажатие E")
+        hotkey_description.setObjectName("hotkey_description")
+            
+        input_group.addWidget(self.hotkey_input)
+        input_group.addWidget(hotkey_description)
+        
+        hotkey_layout.addWidget(CommonLogger._make_label("Горячая клавиша:", 14))
+        hotkey_layout.addLayout(input_group)
+        
+        layout.addLayout(hotkey_layout)'''
         layout.addWidget(self.counter_label)
         layout.addStretch()
-
+        
         self.log_output = CommonLogger.create_log_field(layout)
-
+        
     def toggle_script(self, checked: bool):
         if checked:
             self.log_output.clear()
-            self.worker = CowWorker(self.hotkey_input.text())
+            self.worker = CowWorker()
             self.worker.log_signal.connect(self._append_log)
             self.worker.counter_signal.connect(self._update_counter)
             self.worker.start()
@@ -63,7 +78,7 @@ class CowPage(QtWidgets.QWidget):
             self.worker.stop()
             self.worker.wait()
             self.worker = None
-            self._append_log("[■] Скрипт остановлен.")
+            self._append_log("[■] Скрипт коровки остановлен.")
             self.switch.setChecked(False)
 
     def _append_log(self, text: str):
@@ -77,177 +92,91 @@ class CowWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     counter_signal = QtCore.pyqtSignal(int)
 
-    def __init__(self, hotkey: str = "f6"):
+    def __init__(self, hotkey: str = "f5"):
         super().__init__()
         self._running = True
         self._count = 0
-        self._active = False
+        self.templates = self._load_templates()
+        self.monitor = self._auto_detect_region()
+        self._move_enabled = False
         self._toggle_requested = False
-        self.hotkey = hotkey.lower().strip() or "f6"
+        self.hotkey = hotkey or "f5"
         
-        self.target_colors = {
-            'a': (255, 255, 255),
-            'd': (255, 255, 255),
-            'danger': (255, 105, 86)
-        }
-        self.color_tolerance = 5
+        keyboard.add_hotkey(self.hotkey, self._request_toggle_move)
 
-        try:
-            keyboard.add_hotkey(self.hotkey, self._request_toggle)
-        except Exception as e:
-            self.log(f"[!] Ошибка при назначении горячей клавиши '{self.hotkey}': {str(e)}")
+    def _request_toggle_move(self):
+        self._toggle_requested = True
+
+    def _load_templates(self):
+        t1 = cv2.imread("assets/cow/1.png", cv2.IMREAD_UNCHANGED)
+        t2 = cv2.imread("assets/cow/2.png", cv2.IMREAD_UNCHANGED)
+        if t1 is None or t2 is None:
+            raise FileNotFoundError("Не найдены шаблоны")
+        return {
+            "1": t1[:, :, :3],
+            "2": t2[:, :, :3]
+        }
+
+    def _auto_detect_region(self):
+        screen_width, screen_height = pyautogui.size()
+        region_height = int(screen_height * 0.65)
+        return {
+            "left": 0,
+            "top": int(screen_height * 0.35),
+            "width": screen_width,
+            "height": region_height
+        }
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
 
     def stop(self):
         self._running = False
-        keyboard.unhook_all_hotkeys()
-        self._active = False
-        self.log("[■] Скрипт остановлен")
 
-    def _request_toggle(self):
-        self._toggle_requested = True
-
-    #def colors_are_similar(self, color1, color2, tolerance):
-    #    return all(abs(c1 - c2) <= tolerance for c1, c2 in zip(color1, color2))
-
-    def safe_key_press(self, key):
-        try:
-            key_map = {'A': 0x41, 'D': 0x44, 'a': 0x41, 'd': 0x44}
-            if key in key_map:
-                ctypes.windll.user32.keybd_event(key_map[key], 0, 0, 0)
-                time.sleep(0.05)
-                ctypes.windll.user32.keybd_event(key_map[key], 0, 2, 0)
-        except:
-            pass
-
-    def scan_screen_for_colors(self):
-        try:
-            # 1. Увеличиваем область поиска
-            screenshot = pyautogui.screenshot()
-            width, height = screenshot.size
-            
-            # 2. Центральная область (60% ширины и 50% высоты)
-            start_x, end_x = int(width * 0.2), int(width * 0.8)
-            start_y, end_y = int(height * 0.25), int(height * 0.75)
-            
-            # 3. Новые параметры цветов на основе ваших логов
-            dark_blue = (15, 25, 35)  # Средний цвет из логов
-            danger_color = (255, 105, 86)
-            
-            # 4. Увеличиваем допуск
-            tolerance = 40  # Большой допуск для темных цветов
-            
-            for x in range(start_x, end_x, 5):  # Увеличиваем шаг для скорости
-                for y in range(start_y, end_y, 5):
-                    try:
-                        pixel = screenshot.getpixel((x, y))
-                        
-                        # Проверка на опасный цвет (красный)
-                        if all(abs(p - t) <= 15 for p, t in zip(pixel, danger_color)):
-                            return 'danger', (x, y)
-                        
-                        # Проверка на темно-синий (фон)
-                        if all(abs(p - t) <= tolerance for p, t in zip(pixel, dark_blue)):
-                            # Проверяем область вокруг на белые пиксели (кнопки)
-                            white_count = 0
-                            for dx, dy in [(0,5), (5,0), (0,-5), (-5,0)]:
-                                try:
-                                    p = screenshot.getpixel((x+dx, y+dy))
-                                    if all(c > 200 for c in p):  # Яркий пиксель
-                                        white_count += 1
-                                except:
-                                    continue
-                            
-                            if white_count >= 2:  # Нашли кнопку
-                                # Определяем A (левая часть) или D (правая часть)
-                                if x < width // 2:
-                                    return 'a', (x, y)
-                                else:
-                                    return 'd', (x, y)
-                    
-                    except:
-                        continue
-            
-            return None, None
-            
-        except Exception as e:
-            self.log(f"[ОШИБКА СКАНИРОВАНИЯ] {str(e)}")
-            return None, None
-
-    def colors_are_similar(self, color1, color2, tolerance):
-        """Улучшенная проверка цветов с логированием"""
-        result = all(abs(c1 - c2) <= tolerance for c1, c2 in zip(color1, color2))
-        if not result:
-            self.log(f"Цвет {color1} не совпадает с {color2} (допуск {tolerance})")
-        return result
-        
     def run(self):
-        self.log("Скрипт коров запущен. Нажми ESC для остановки или используй переключатель.")
-        rage_logged = False
-        danger_pause_until = 0
+        with mss.mss() as sct:
+            self.log("Скрипт коровы запущен. Нажми ESC для остановки.")
+            self.log(f"Область поиска: {self.monitor}")
 
-        try:
-            while self._running:
-                try:
-                    if not CommonLogger.is_rage_mp_active():
-                        if self._active:
-                            self._active = False
-                            self.log("[■] Скрипт приостановлен (RAGE не активно)")
-                        if not rage_logged:
-                            self.log("Окно RAGE Multiplayer не активно. Ожидание...")
-                            rage_logged = True
-                        time.sleep(1.0)
-                        continue
-                    else:
-                        if rage_logged:
-                            self.log("Окно RAGE Multiplayer найдено.")
-                            rage_logged = False
-                except Exception as e:
-                    self.log(f"[!] Ошибка при проверке окна RAGE: {e}")
-                    time.sleep(1.0)
-                    continue
+            try:
+                while self._running:
+                    if keyboard.is_pressed("esc"):
+                        self.log("Получен ESC. Останавливаемся...")
+                        self.stop()
+                        break
+                    
+                    frame = np.array(sct.grab(self.monitor))
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
-                if keyboard.is_pressed("esc"):
-                    self.log("Получен ESC. Останавливаемся...")
-                    self.stop()
-                    break
+                    scores = {}
+                    locations = {}
 
-                if self._toggle_requested:
-                    self._active = not self._active
-                    self.log(f"[→] Скрипт {'активирован' if self._active else 'деактивирован'}")
-                    self._toggle_requested = False
+                    for key, template in self.templates.items():
+                        res = cv2.matchTemplate(frame_rgb, template, cv2.TM_CCOEFF_NORMED)
+                        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                        if max_val >= 0.91:
+                            h, w = template.shape[:2]
+                            roi = frame_rgb[max_loc[1]:max_loc[1]+h, max_loc[0]:max_loc[0]+w]
+                            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+                            brightness = np.mean(gray)
+                            scores[key] = brightness
+                            locations[key] = max_val
 
-                if not self._active:
+                    if "1" in scores and "2" in scores:
+                        brighter = max(scores, key=scores.get)
+                        if brighter == "1":
+                            keyboard.send("a")
+                            self._count += 1
+                            self.log(f"[✓] найдена → A (#{self._count})")
+                        else:
+                            keyboard.send("d")
+                            self._count += 1
+                            self.log(f"[✓] найдена → D (#{self._count})")
+                        self.counter_signal.emit(self._count)
+
                     time.sleep(0.1)
-                    continue
 
-                if time.time() < danger_pause_until:
-                    time.sleep(0.1)
-                    continue
-
-                color_type, _ = self.scan_screen_for_colors()
-                
-                if color_type == 'danger':
-                    self.log("[!] Обнаружен опасный цвет - пауза на 5-15 секунд")
-                    danger_pause_until = time.time() + random.uniform(5, 15)
-                    continue
-                elif color_type == 'a':
-                    self.safe_key_press('A')
-                    self._count += 1
-                    self.log(f"[A] Нажата клавиша A (#{self._count})")
-                    self.counter_signal.emit(self._count)
-                    time.sleep(0.3 + random.uniform(0.0, 0.1))
-                elif color_type == 'd':
-                    self.safe_key_press('D')
-                    self._count += 1
-                    self.log(f"[D] Нажата клавиша D (#{self._count})")
-                    self.counter_signal.emit(self._count)
-                    time.sleep(0.3 + random.uniform(0.0, 0.1))
-                else:
-                    time.sleep(0.05)
-
-        except Exception as exc:
-            self.log(f"[Ошибка потока] {exc}")
-            self.stop()
+            except Exception as exc:
+                self.log(f"[Ошибка потока] {str(exc)}")
+            finally:
+                self.stop()
