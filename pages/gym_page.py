@@ -6,10 +6,11 @@ import pyautogui
 import cv2
 import numpy as np
 import mss
-from widgets.logger import CommonLogger
-
+from widgets.logger import CommonLogger, ScriptController, HotkeyManager
 
 class GymPage(QtWidgets.QWidget):
+    statusChanged = QtCore.pyqtSignal(bool)
+
     def __init__(self):
         super().__init__()
         self.worker: GymWorker | None = None
@@ -17,43 +18,62 @@ class GymPage(QtWidgets.QWidget):
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
-
+        layout.setContentsMargins(20, 15, 20, 15)
         switch_layout = QtWidgets.QHBoxLayout()
         self.switch = SwitchButton()
-        self.switch.clicked.connect(self.toggle_script)
+        self.switch.clicked.connect(self.handle_toggle)
+        self.switch.clicked.connect(self.statusChanged.emit)
 
         switch_layout.addWidget(CommonLogger._make_label("Качалка", 16))
         switch_layout.addStretch()
         switch_layout.addWidget(self.switch)
         layout.addLayout(switch_layout)
-        
+
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
         self.counter_label.setObjectName("counter_label")
+        
+        hotkey_layout = QtWidgets.QHBoxLayout()
+        hotkey_layout.setContentsMargins(0, 0, 0, 0)
+        hotkey_layout.setSpacing(5)
+        
+        input_group = QtWidgets.QHBoxLayout()
+        input_group.setSpacing(5)
+        input_group.setContentsMargins(0, 0, 0, 0)
+        
+        self.hotkey_input = QtWidgets.QLineEdit("f5")
+        self.hotkey_input.setMaxLength(20)
+        self.hotkey_input.setFixedWidth(50)
+        self.hotkey_input.setAlignment(QtCore.Qt.AlignCenter)
+        self.hotkey_input.setStyleSheet("""
+            background-color: #222; 
+            color: white;
+            font-size: 12px;
+        """)
+        
+        hotkey_description = QtWidgets.QLabel("— вкл/выкл автонажатие E")
+        hotkey_description.setObjectName("hotkey_description")
+            
+        input_group.addWidget(self.hotkey_input)
+        input_group.addWidget(hotkey_description)
+        
+        hotkey_layout.addWidget(CommonLogger._make_label("Горячая клавиша:", 14))
+        hotkey_layout.addLayout(input_group)
+        
+        layout.addLayout(hotkey_layout)
+        
         layout.addWidget(self.counter_label)
         layout.addStretch()
-        
+
         self.log_output = CommonLogger.create_log_field(layout)
 
-    def toggle_script(self, checked: bool):
-        if checked:
-            self.log_output.clear()
-            self.worker = GymWorker()
-            self.worker.log_signal.connect(self._append_log)
-            self.worker.counter_signal.connect(self._update_counter)
-            self.worker.start()
-        else:
-            self._stop_worker()
-
-    def _stop_worker(self):
-        if self.worker:
-            self.worker.stop()
-            self.worker.wait()
-            self.worker = None
-            self._append_log("[■] Скрипт качалки остановлен.")
-            self.switch.setChecked(False)
-
-    def _append_log(self, text: str):
-        self.log_output.append(text)
+    def handle_toggle(self):
+        ScriptController.toggle_script(
+            widget=self,
+            worker_factory=GymWorker,
+            log_output=self.log_output,
+            extra_signals={"counter_signal": self._update_counter},
+            worker_kwargs={"hotkey": self.hotkey_input.text().strip() or 'f5'}
+        )
 
     def _update_counter(self, value: int):
         self.counter_label.setText(f"Счётчик: {value}")
@@ -62,25 +82,67 @@ class GymWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     counter_signal = QtCore.pyqtSignal(int)
 
-    def __init__(self):
+    TARGET_RGB = (120, 255, 166)
+
+    H_TOL = 0   #оттенок 10
+    S_TOL = 0   #насыщенность 15
+    V_TOL = 0   #яркость
+
+    MIN_AREA = 50
+    
+    def __init__(self, monitor: dict = None, hotkey: str = 'f5'):
         super().__init__()
         self._running = True
         self._count = 0
-        self.template = self._load_template()
-        self.monitor = self._auto_detect_region()
-        self.last_action_time = time.time()
-        self.circle_pos = None
+        self.monitor = monitor or self._auto_detect_region()
+        self._hotkey = (hotkey or 'f5').lower().strip()
+        self._hotkey_id = None
+        self._auto_e_enabled = False
+        self._last_e_time = 0.0
+        
+        self.hotkey_manager = HotkeyManager(
+            hotkey=hotkey,
+            toggle_callback=self._on_toggle_auto_e,
+            log_signal=self.log_signal
+        )
+     
+    def _on_toggle_auto_e(self, enabled: bool):
+        self._auto_e_enabled = enabled
+        
+    def rgb_to_hsv_bounds(self, rgb, h_tol, s_tol, v_tol):
+        bgr = np.uint8([[[rgb[2], rgb[1], rgb[0]]]])
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[0, 0]
+        h, s, v = int(hsv[0]), int(hsv[1]), int(hsv[2])
 
-    def _load_template(self):
-        template = cv2.imread('assets/gym/circle.png', cv2.IMREAD_UNCHANGED)
-        if template is None:
-            raise FileNotFoundError("Шаблон не найден!")
-        return template[:, :, :3]
+        lower = np.array([max(0,   h - h_tol), max(0,   s - s_tol), max(0,   v - v_tol)], dtype=np.uint8)
+        upper = np.array([min(179, h + h_tol), min(255, s + s_tol), min(255, v + v_tol)], dtype=np.uint8)
+        return lower, upper
+
+    def found_circle_by_color(self, frame_bgr, lower, upper):
+        hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, lower, upper)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < self.MIN_AREA:
+                continue
+
+            perim = cv2.arcLength(cnt, True)
+            if perim == 0:
+                continue
+
+            '''circularity = 4 * math.pi * area / (perim * perim)
+            if circularity < MIN_CIRCULARITY:
+                continue'''
+
+            return True
+        return False
 
     def _auto_detect_region(self):
         screen_width, screen_height = pyautogui.size()
         region_width = int(screen_width * 0.5)
-        region_height = int(screen_height * 0.6)
+        region_height = int(screen_height * 0.7)
         vertical_position_ratio = 0.25
         return {
             'left': int((screen_width - region_width) / 2),
@@ -91,61 +153,40 @@ class GymWorker(QtCore.QThread):
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
-
+        
     def stop(self):
         self._running = False
 
     def run(self):
-        with mss.mss() as sct:
-            self.log("Скрипт качалки запущен. Нажми ESC для остановки.")
-            self.log(f"Область поиска: {self.monitor}")
+        lower, upper = self.rgb_to_hsv_bounds(self.TARGET_RGB, self.H_TOL, self.S_TOL, self.V_TOL)
+        was_found = False
+        self._last_e_time = time.time()
 
-            try:
+        self.log(f"Запуск. Область поиска: {self.monitor}")
+        self.hotkey_manager.register()
+        try:
+            with mss.mss() as sct:
                 while self._running:
-                    if keyboard.is_pressed("esc"):
-                        self.log("Получен ESC. Останавливаемся...")
-                        self.stop()
-                        break
+                    img = np.array(sct.grab(self.monitor))
+                    frame_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
-                    frame = np.array(sct.grab(self.monitor))
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                    found = self.found_circle_by_color(frame_bgr, lower, upper)
 
-                    res = cv2.matchTemplate(frame_rgb, self.template, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, max_loc = cv2.minMaxLoc(res)
-                    if max_val >= 0.94:
-                        h, w = self.template.shape[:2]
-                        self.circle_pos = (max_loc[0] + w // 2, max_loc[1] + h // 2, max(w, h) // 2)
-                        #self.log(f"[+] Найден основной круг (score={max_val:.2f})")
-                    else:
-                        time.sleep(0.05)
-                        continue
+                    if found and not was_found:
+                        self.log(f"Круг найден, нажимаем пробел")
+                        keyboard.press_and_release('space')
 
-                    x, y, r = self.circle_pos
-                    roi = frame_rgb[y-r-10:y+r+10, x-r-10:x+r+10]
-                    if roi.size == 0:
-                        continue
+                    if not found and self._auto_e_enabled:
+                        now = time.time()
+                        if now - self._last_e_time >= 5.0:
+                            keyboard.press_and_release('e')
+                            self._last_e_time = now
+                            self.log("Нажата 'E' (авто)")
 
-                    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                    _, mask = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY)
+                    was_found = found
 
-                    white_ratio = np.sum(mask > 0) / mask.size
-
-                    if white_ratio > 0.05:
-                        self._count += 1
-                        self.log(f"[✓] Найдено совпадение -> SPACE (#{self._count})")
-                        self.counter_signal.emit(self._count)
-                        keyboard.press_and_release("space")
-                        self.last_action_time = time.time()
-                        time.sleep(0.3)
-
-                    if time.time() - self.last_action_time >= 5:
-                        self.log("[!] 5 секунд без действия - нажимаем E")
-                        keyboard.press_and_release("e")
-                        self.last_action_time = time.time()
-
-                    time.sleep(0.01)
-
-            except Exception as exc:
-                self.log(f"[Ошибка потока] {str(exc)}")
-            finally:
-                self.stop()
+        except Exception as exc:
+            self.log(f"[Ошибка потока] {exc}")
+        finally:
+            self.hotkey_manager.unregister()
+            self._running = False

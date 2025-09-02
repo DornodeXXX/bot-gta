@@ -4,10 +4,11 @@ import time
 import keyboard
 import pygetwindow as gw
 import pyautogui
-from widgets.logger import CommonLogger
+from widgets.logger import CommonLogger, ScriptController
 
 
 class PortPage(QtWidgets.QWidget):
+    statusChanged = QtCore.pyqtSignal(bool)
     def __init__(self):
         super().__init__()
         self.worker: PortWorker | None = None
@@ -15,11 +16,12 @@ class PortPage(QtWidgets.QWidget):
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
-
+        layout.setContentsMargins(20, 15, 20, 15)
         switch_layout = QtWidgets.QHBoxLayout()
         self.switch = SwitchButton()
-        self.switch.clicked.connect(self.toggle_script)
-
+        self.switch.clicked.connect(self.handle_toggle)
+        self.switch.clicked.connect(self.statusChanged.emit)
+        
         switch_layout.addWidget(CommonLogger._make_label("Порт", 16))
         switch_layout.addStretch()
         switch_layout.addWidget(self.switch)
@@ -61,26 +63,15 @@ class PortPage(QtWidgets.QWidget):
         
         self.log_output = CommonLogger.create_log_field(layout)
 
-    def toggle_script(self, checked: bool):
-        if checked:
-            self.log_output.clear()
-            self.worker = PortWorker(self.hotkey_input.text())
-            self.worker.log_signal.connect(self._append_log)
-            self.worker.counter_signal.connect(self._update_counter)
-            self.worker.start()
-        else:
-            self._stop_worker()
-
-    def _stop_worker(self):
-        if self.worker:
-            self.worker.stop()
-            self.worker.wait()
-            self.worker = None
-            self._append_log("[■] Скрипт остановлен.")
-            self.switch.setChecked(False)
-
-    def _append_log(self, text: str):
-        self.log_output.append(text)
+    def handle_toggle(self):
+        ScriptController.toggle_script(
+            widget=self,
+            worker_factory=lambda: PortWorker(self.hotkey_input.text()),
+            log_output=self.log_output,
+            extra_signals={
+                "counter_signal": self._update_counter
+            }
+        )
 
     def _update_counter(self, value: int):
         self.counter_label.setText(f"Счётчик: {value}")

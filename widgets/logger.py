@@ -7,6 +7,7 @@ import pygetwindow as gw
 from typing import Optional, Union, Callable, Any
 from PyQt5.QtCore import pyqtSignal
 from PyQt5 import QtWidgets, QtCore
+import keyboard
 
 class CommonLogger:
     @staticmethod
@@ -83,6 +84,72 @@ class CommonLogger:
         log_field.setReadOnly(True)
         log_field.setObjectName("logField")
         log_field.setStyleSheet("background-color: black; color: white; font-family: monospace;")
-        log_field.setFixedHeight(240)
+        log_field.setMinimumHeight(100)
         layout.addWidget(log_field)
         return log_field
+        
+class ScriptController:
+    @staticmethod
+    def toggle_script(widget, worker_factory, log_output, extra_signals=None, status_signal=None,
+                      worker_args=None, worker_kwargs=None):
+        checked = widget.switch.isChecked()
+        if checked:
+            log_output.clear()
+            worker_args = worker_args or ()
+            worker_kwargs = worker_kwargs or {}
+            widget.worker = worker_factory(*worker_args, **worker_kwargs)
+            widget.worker.log_signal.connect(lambda text: ScriptController.append_log(log_output, text))
+
+            if extra_signals:
+                for signal_name, slot in extra_signals.items():
+                    signal = getattr(widget.worker, signal_name, None)
+                    if signal:
+                        signal.connect(slot)
+
+            widget.worker.finished.connect(lambda: ScriptController.on_worker_finished(widget, log_output))
+            widget.worker.start()
+        else:
+            if widget.worker:
+                widget.worker.stop()
+
+        if status_signal:
+            status_signal.emit(checked)
+
+    @staticmethod
+    def on_worker_finished(widget, log_output):
+        ScriptController.append_log(log_output, "[■] Скрипт остановлен.")
+        widget.worker = None
+
+    @staticmethod
+    def append_log(log_output, text):
+        log_output.append(text)
+
+class HotkeyManager:
+    def __init__(self, hotkey: str, toggle_callback: Callable, log_signal=None):
+        self.hotkey = (hotkey or 'f5').lower().strip()
+        self._hotkey_id = None
+        self._enabled = False
+        self.log_signal = log_signal
+        self.toggle_callback = toggle_callback
+
+    def toggle(self):
+        self._enabled = not self._enabled
+        state = "включено" if self._enabled else "выключено"
+        CommonLogger.log(f"Автонажатие E: {state}", self.log_signal)
+        if self.toggle_callback:
+            self.toggle_callback(self._enabled)
+
+    def register(self):
+        try:
+            self._hotkey_id = keyboard.add_hotkey(self.hotkey, self.toggle)
+        except Exception as exc:
+            CommonLogger.log(f"Не удалось зарегистрировать горячую клавишу '{self.hotkey}': {exc}",
+                             self.log_signal)
+
+    def unregister(self):
+        if self._hotkey_id is not None:
+            try:
+                keyboard.remove_hotkey(self._hotkey_id)
+            except Exception:
+                pass
+            self._hotkey_id = None

@@ -1,11 +1,12 @@
 from PyQt5 import QtWidgets, QtCore
 from widgets.switch_button import SwitchButton
-from widgets.logger import CommonLogger
 import os
 import time
 import keyboard
+from widgets.logger import CommonLogger, ScriptController
 
 class StroykaPage(QtWidgets.QWidget):
+    statusChanged = QtCore.pyqtSignal(bool)
     def __init__(self):
         super().__init__()
         self.worker = None
@@ -13,12 +14,13 @@ class StroykaPage(QtWidgets.QWidget):
 
     def _init_ui(self):
         lay = QtWidgets.QVBoxLayout(self)
-
+        lay.setContentsMargins(20, 15, 20, 15)
         head = QtWidgets.QHBoxLayout()
         head.addWidget(CommonLogger._make_label("Стройка | Шахта", 16))
         head.addStretch()
         self.switch = SwitchButton()
-        self.switch.clicked.connect(self._toggle)
+        self.switch.clicked.connect(self.handle_toggle)
+        self.switch.clicked.connect(self.statusChanged.emit)
         head.addWidget(self.switch)
         lay.addLayout(head)
 
@@ -26,28 +28,17 @@ class StroykaPage(QtWidgets.QWidget):
         lay.addWidget(self.counter)
         lay.addStretch()
 
-        self.log_field = CommonLogger.create_log_field(lay)
+        self.log_output = CommonLogger.create_log_field(lay)
 
-    def _toggle(self, checked: bool):
-        if checked:
-            self._start_worker()
-        else:
-            self._stop_worker()
-
-    def _start_worker(self):
-        self.log_field.clear()
-        self.worker = StroykaWorker()
-        self.worker.log_signal.connect(self.log_field.append)
-        self.worker.counter_signal.connect(self._update_counter)
-        self.worker.start()
-
-    def _stop_worker(self):
-        if self.worker:
-            self.worker.stop()
-            self.worker.wait()
-            self.worker = None
-        self.log_field.append("[■] Скрипт остановлен.")
-        self.switch.setChecked(False)
+    def handle_toggle(self):
+        ScriptController.toggle_script(
+            widget=self,
+            worker_factory=lambda: StroykaWorker(),
+            log_output=self.log_output,
+            extra_signals={
+                "counter_signal": self._update_counter
+            }
+        )
 
     def _update_counter(self, value: int):
         self.counter.setText(f"Счётчик: {value}")

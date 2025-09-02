@@ -6,9 +6,10 @@ import traceback
 import pyautogui
 from pyautogui import ImageNotFoundException
 import keyboard
-from widgets.logger import CommonLogger
+from widgets.logger import CommonLogger, ScriptController
 
 class ShveikaPage(QtWidgets.QWidget):
+    statusChanged = QtCore.pyqtSignal(bool)
     def __init__(self):
         super().__init__()
         self.worker: ShveikaWorker | None = None
@@ -16,36 +17,34 @@ class ShveikaPage(QtWidgets.QWidget):
 
     def _init_ui(self):
         lay = QtWidgets.QVBoxLayout(self)
-
+        lay.setContentsMargins(20, 15, 20, 15)
         head = QtWidgets.QHBoxLayout()
         head.addWidget(CommonLogger._make_label("Швейка Авто-Кликер", 16))
         head.addStretch()
         self.switch = SwitchButton()
-        self.switch.clicked.connect(self._toggle)
+        self.switch.clicked.connect(self.handle_toggle)
+        self.switch.clicked.connect(self.statusChanged.emit)
         head.addWidget(self.switch)
         lay.addLayout(head)
 
-        self.counter = CommonLogger._make_label("Цикл: 0", 14)
-        lay.addWidget(self.counter)
+        self.counter_label = CommonLogger._make_label("Цикл: 0", 14)
+        lay.addWidget(self.counter_label)
         lay.addStretch()
 
-        self.log_field = CommonLogger.create_log_field(lay)
+        self.log_output = CommonLogger.create_log_field(lay)
 
-    def _toggle(self, checked: bool):
-        if checked:
-            self.log_field.clear()
-            self.worker = ShveikaWorker()
-            self.worker.log_signal.connect(self.log_field.append)
-            self.worker.counter_signal.connect(lambda v: self.counter.setText(f"Цикл: {v}"))
-            self.worker.start()
-        else:
-            if self.worker:
-                self.worker.stop()
-                self.worker.wait()
-                self.worker = None
-            self.log_field.append("[■] Скрипт остановлен.")
-            self.switch.setChecked(False)
+    def handle_toggle(self):
+        ScriptController.toggle_script(
+            widget=self,
+            worker_factory=lambda: ShveikaWorker(),
+            log_output=self.log_output,
+            extra_signals={
+                "counter_signal": self._update_counter
+            }
+        )
 
+    def _update_counter(self, value: int):
+        self.counter_label.setText(f"Счётчик: {value}")
 
 class ShveikaWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
@@ -72,7 +71,6 @@ class ShveikaWorker(QtCore.QThread):
     def safe_locate_center(self, path: str):
         return CommonLogger.safe_locate_center(path, self.CONFIDENCE, self.log_signal)
 
-
     def run(self):
         for path in self.image_paths:
             if not os.path.exists(path):
@@ -82,11 +80,6 @@ class ShveikaWorker(QtCore.QThread):
         self.log("Скрипт запущен. Ожидание всех 20 элементов...")
 
         while self.running:
-            if keyboard.is_pressed("f5"):
-                self.log("[■] Остановлено по F5")
-                self.stop()
-                break
-
             coords = []
             missing_indices = []
 
@@ -106,7 +99,6 @@ class ShveikaWorker(QtCore.QThread):
                     if pos is None:
                         self.log(f"[⚠️] Пропуск {i+1} — координаты не найдены.")
                         continue
-
                     if i == 0:
                         pyautogui.click(pos)
                         self.log(f"[Клик] {i+1}/20: {pos} (1 раз)")
@@ -115,8 +107,6 @@ class ShveikaWorker(QtCore.QThread):
                         time.sleep(0.05)
                         pyautogui.click(pos)
                         self.log(f"[Клик] {i+1}/20: {pos} (2 раза)")
-                    
-                    time.sleep(0.5)
             else:
                 self.log(f"[~] Ожидание всех 20 элементов...")
-            time.sleep(0.5)
+

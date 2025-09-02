@@ -3,9 +3,11 @@ from PyQt5 import QtWidgets, QtCore
 import random
 import time
 import vgamepad as vg
-from widgets.logger import CommonLogger
+from widgets.logger import CommonLogger, ScriptController
+import threading
 
 class AntiAfkPage(QtWidgets.QWidget):
+    statusChanged = QtCore.pyqtSignal(bool)
     def __init__(self):
         super().__init__()
         self.worker = None
@@ -13,9 +15,10 @@ class AntiAfkPage(QtWidgets.QWidget):
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
-        
+        layout.setContentsMargins(20, 15, 20, 15)
         self.switch = SwitchButton()
-        self.switch.clicked.connect(self.toggle_script)
+        self.switch.clicked.connect(self.handle_toggle)
+        self.switch.clicked.connect(self.statusChanged.emit)
 
         switch_layout = QtWidgets.QHBoxLayout()
         switch_layout.addWidget(CommonLogger._make_label("Анти-АФК", 16))
@@ -82,7 +85,6 @@ class AntiAfkPage(QtWidgets.QWidget):
         row.addWidget(value_label)
         return row
 
-
     def update_min_label(self, value):
         self.min_label.setText(f"{value / 10.0:.1f} сек")
 
@@ -95,29 +97,17 @@ class AntiAfkPage(QtWidgets.QWidget):
     def update_max_pause_label(self, value):
         self.max_pause_label.setText(f"{value / 10.0:.1f} сек")
 
-
-    def toggle_script(self, checked):
-        if checked:
-            self.log_output.clear()
-            min_delay = self.min_delay_slider.value() / 10.0
-            max_delay = self.max_delay_slider.value() / 10.0
-            min_pause = self.min_pause_slider.value() / 10.0
-            max_pause = self.max_pause_slider.value() / 10.0
-
-            self.worker = AntiAfkWorker(min_delay, max_delay, min_pause, max_pause)
-            self.worker.log_signal.connect(self.append_log)
-            self.worker.start()
-        else:
-            if self.worker:
-                self.worker.stop()
-                self.worker.wait()
-                self.worker = None
-                self.append_log("[■] Скрипт остановлен.")
-                self.switch.setChecked(False)
-
-    def append_log(self, text):
-        self.log_output.append(text)
-
+    def handle_toggle(self):
+        ScriptController.toggle_script(widget=self,
+            worker_factory=lambda: AntiAfkWorker(
+                self.min_delay_slider.value() / 10.0,
+                self.max_delay_slider.value() / 10.0,
+                self.min_pause_slider.value() / 10.0,
+                self.max_pause_slider.value() / 10.0
+            ),
+            log_output=self.log_output,
+            status_signal=self.statusChanged
+        )
 
 class AntiAfkWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
@@ -130,6 +120,7 @@ class AntiAfkWorker(QtCore.QThread):
         self.min_pause = min_pause
         self.max_pause = max_pause
         self.gamepad = vg.VX360Gamepad()
+        self._stop = threading.Event()
 
         self.DIRECTIONS = {
             'up': (0, 32767),
@@ -145,13 +136,15 @@ class AntiAfkWorker(QtCore.QThread):
 
     def stop(self):
         self.running = False
-        self.quit()
-        self.wait()
+        self._stop.set()
+
+    def log(self, message: str):
+        CommonLogger.log(message, self.log_signal)
 
     def run(self):
         self.log("[→] Скрипт анти-АФК запущен.")
         try:
-            while self.running:
+            while self.running and not self._stop.is_set():
                 direction = random.choice(list(self.DIRECTIONS.keys()))
                 hold_time = random.uniform(self.min_delay, self.max_delay)
                 pause_time = random.uniform(self.min_pause, self.max_pause)
@@ -161,19 +154,17 @@ class AntiAfkWorker(QtCore.QThread):
                 self.gamepad.left_joystick(x_value=x, y_value=y)
                 self.gamepad.update()
 
-                time.sleep(hold_time)
+                if self._stop.wait(hold_time):
+                    break
 
                 self.gamepad.left_joystick(x_value=0, y_value=0)
                 self.gamepad.update()
 
                 self.log(f"[…] Пауза между: {pause_time:.2f} сек.")
-                time.sleep(pause_time)
+                if self._stop.wait(pause_time):
+                    break
         except Exception as e:
             self.log(f"[Ошибка] {e}")
         finally:
-            self.log("[■] Скрипт завершён.")
             self.gamepad.left_joystick(x_value=0, y_value=0)
             self.gamepad.update()
-
-    def log(self, message: str):
-        CommonLogger.log(message, self.log_signal)
