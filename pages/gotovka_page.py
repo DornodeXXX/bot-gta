@@ -1,11 +1,42 @@
 from PyQt5 import QtWidgets, QtCore
 from widgets.switch_button import SwitchButton
-import pygetwindow as gw
 import pyautogui
 import time
-import keyboard
 import os
 from widgets.logger import CommonLogger, ScriptController
+
+BASE_ASSETS_PATH = "assets/cook/"
+RECIPES = {
+    "Фруктовый смузи": [
+        ("frukti.png", "right"),
+        ("voda2.png", "right"),
+        ("whisk2.png", "right"),
+        ("startCoocking.png", "left")
+    ],
+    "Фруктовый салат": [
+        ("frukti.png", "right"),
+        ("knife2.png", "right"),
+        ("startCoocking.png", "left")
+    ],
+    "Овощной салат": [
+        ("ovoshi.png", "right"),
+        ("knife2.png", "right"),
+        ("startCoocking.png", "left")
+    ],
+    "Овощной смузи": [
+        ("ovoshi.png", "right"),
+        ("voda2.png", "right"),
+        ("whisk2.png", "right"),
+        ("startCoocking.png", "left")
+    ],
+    "Рагу": [
+        ("myaso.png", "right"),
+        ("ovoshi.png", "right"),
+        ("voda2.png", "right"),
+        ("fire2.png", "right"),
+        ("startCoocking.png", "left")
+    ]
+}
 
 class GotovkaPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -32,7 +63,7 @@ class GotovkaPage(QtWidgets.QWidget):
         dish_label.setStyleSheet("color: white; font-size: 14px; background: none;")
 
         self.dish_combo = QtWidgets.QComboBox()
-        self.dish_combo.addItems(["Фруктовый смузи", "Фруктовый салат", "Овощной салат", "Овощной смузи"])
+        self.dish_combo.addItems(list(RECIPES.keys()))
         self.dish_combo.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
 
         dish_layout.addWidget(dish_label)
@@ -58,6 +89,8 @@ class GotovkaWorker(QtCore.QThread):
         super().__init__()
         self._running = True
         self.dish_name = dish_name
+        self.confidence = 0.85
+        self.cycles_count = 0
 
     def stop(self):
         self._running = False
@@ -65,112 +98,69 @@ class GotovkaWorker(QtCore.QThread):
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
 
-    def _drag_image(self, image_path):
+    def _find_and_perform_action(self, image_filename: str, click_type: str) -> bool:
+        full_image_path = os.path.join(BASE_ASSETS_PATH, image_filename)
         try:
-            location = pyautogui.locateCenterOnScreen(image_path, confidence=0.85)
+            location = pyautogui.locateCenterOnScreen(full_image_path, confidence=self.confidence)
             if location:
-                self.log(f"[✓] Найдено изображение: {os.path.basename(image_path)}.")
-                pyautogui.rightClick(location.x, location.y)
+                if click_type == "right":
+                    pyautogui.rightClick(location)
+                    self.log(f"[✓] Использован/перетащен: {image_filename}.")
+                elif click_type == "left":
+                    pyautogui.click(location)
+                    self.log(f"[✓] Клик по кнопке: {image_filename}.")
                 return True
-            return False
-        except Exception as e:
-            return False
-
-    def _click_image(self, image_path):
-        try:
-            location = pyautogui.locateCenterOnScreen(image_path, confidence=0.85)
-            if location:
-                pyautogui.click(location)
-                self.log(f"[✓] Клик по изображению: {os.path.basename(image_path)}.")
-                return True
-            return False
-        except Exception as e:
-            return False
-
-    def _find_all_required_images(self):
-        required_images = []
-        
-        if self.dish_name == "Фруктовый смузи":
-            required_images = [
-                ("assets/cook/frukti.png", self._drag_image),
-                ("assets/cook/voda2.png", self._drag_image),
-                ("assets/cook/whisk2.png", self._drag_image),
-                ("assets/cook/startCoocking.png", self._click_image)
-            ]
-        elif self.dish_name == "Фруктовый салат":
-            required_images = [
-                ("assets/cook/frukti.png", self._drag_image),
-                ("assets/cook/knife2.png", self._drag_image),
-                ("assets/cook/startCoocking.png", self._click_image)
-            ]
-        elif self.dish_name == "Овощной салат":
-            required_images = [
-                ("assets/cook/ovoshi.png", self._drag_image),
-                ("assets/cook/knife2.png", self._drag_image),
-                ("assets/cook/startCoocking.png", self._click_image)
-            ]
-        elif self.dish_name == "Овощной смузи":
-            required_images = [
-                ("assets/cook/ovoshi.png", self._drag_image),
-                ("assets/cook/voda2.png", self._drag_image),
-                ("assets/cook/whisk2.png", self._drag_image),
-                ("assets/cook/startCoocking.png", self._click_image)
-            ]
-
-        all_found = True
-        for img_path, action in required_images:
-            try:
-                location = pyautogui.locateCenterOnScreen(img_path, confidence=0.85)
-                if not location:
-                    all_found = False
-                    break
-            except:
-                all_found = False
-                break
-                
-        if not all_found:
-            return False
-            
-        for img_path, action in required_images:
-            if not action(img_path):
+            else:
+                self.log(f"[!] Изображение не найдено: {image_filename}.")
                 return False
-                
+        except Exception as e:
+            return False
+
+    def _execute_recipe(self) -> bool:
+        recipe_steps = RECIPES.get(self.dish_name)
+        for image_filename, action_type in recipe_steps:
+            if not self._running:
+                return False
+            if not self._find_and_perform_action(image_filename, action_type):
+                return False
+            time.sleep(0.1)
+
+        self.log(f"[✓] Все шаги для приготовления '{self.dish_name}' выполнены.")
         return True
 
     def run(self):
         self.log(f"[→] Скрипт готовки запущен для блюда: {self.dish_name}")
         rage_window_missing = True
-        waiting_for_images = False
-        
+        waiting_for_recipe_elements = False
+
         try:
             while self._running:
                 if not CommonLogger.is_rage_mp_active():
-                    if rage_window_missing:
-                        self.log("Окно RAGE Multiplayer не активно. Ожидание...")
-                        rage_window_missing = False
+                    if not rage_window_missing:
+                        self.log("[!] Окно RAGE Multiplayer не активно. Ожидание...")
+                        rage_window_missing = True
                     time.sleep(1)
                     continue
+                else:
+                    if rage_window_missing:
+                        self.log("[✓] Окно RAGE Multiplayer активно.")
+                        rage_window_missing = False
 
-                try:
-                    if self._find_all_required_images():
-                        waiting_for_images = False
-                        self.log("[✓] Операция готовки завершена. Начинаем новую...")
-                        time.sleep(5.5)
-                    else:
-                        if not waiting_for_images:
-                            self.log("[!] Ожидание появления всех элементов...")
-                            waiting_for_images = True
-                        time.sleep(1.0)
-
-                except Exception as e:
-                    if not waiting_for_images:
-                        self.log(f"[!] Временная ошибка: {str(e)}")
-                        waiting_for_images = True
+                if self._execute_recipe():
+                    self.cycles_count += 1
+                    self.log(f"[✓] Цикл готовки №{self.cycles_count} для '{self.dish_name}' завершён.")
+                    self.log("Ожидание перезарядки (5.5 секунд)...")
+                    waiting_for_recipe_elements = False
+                    time.sleep(5.5)
+                else:
+                    if not waiting_for_recipe_elements:
+                        self.log(f"[!] Ожидание появления всех элементов для '{self.dish_name}'...")
+                        waiting_for_recipe_elements = True
                     time.sleep(1.0)
-                    continue
 
-        except Exception as e:
-            self.log(f"[Ошибка] {e}")
+        except Exception as exc:
+            self.log(f"[Ошибка потока] {exc}")
         finally:
             if self._running:
                 self.log("[■] Скрипт готовки завершён.")
+

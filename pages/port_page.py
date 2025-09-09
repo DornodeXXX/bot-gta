@@ -30,32 +30,9 @@ class PortPage(QtWidgets.QWidget):
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
         self.counter_label.setObjectName("counter_label")
 
-        hotkey_layout = QtWidgets.QHBoxLayout()
-        hotkey_layout.setContentsMargins(0, 0, 0, 0)
-        hotkey_layout.setSpacing(5)
-        
-        input_group = QtWidgets.QHBoxLayout()
-        input_group.setSpacing(5)
-        input_group.setContentsMargins(0, 0, 0, 0)
-        
-        self.hotkey_input = QtWidgets.QLineEdit("f5")
-        self.hotkey_input.setMaxLength(20)
-        self.hotkey_input.setFixedWidth(50)
-        self.hotkey_input.setAlignment(QtCore.Qt.AlignCenter)
-        self.hotkey_input.setStyleSheet("""
-            background-color: #222; 
-            color: white;
-            font-size: 12px;
-        """)
-        
-        hotkey_description = QtWidgets.QLabel("— вкл/выкл автонажатие Shift+W")
-        hotkey_description.setObjectName("hotkey_description")
-        
-        input_group.addWidget(self.hotkey_input)
-        input_group.addWidget(hotkey_description)
-        
-        hotkey_layout.addWidget(CommonLogger._make_label("Горячая клавиша:", 14))
-        hotkey_layout.addLayout(input_group)
+        hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
+            default="f5", description="— вкл/выкл автонажатие Shift+W"
+        )
         
         layout.addLayout(hotkey_layout)
         layout.addWidget(self.counter_label)

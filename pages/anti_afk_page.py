@@ -1,57 +1,41 @@
 from widgets.switch_button import SwitchButton
 from PyQt5 import QtWidgets, QtCore
 import random
-import time
 import vgamepad as vg
 from widgets.logger import CommonLogger, ScriptController
 import threading
+import os
+import pyautogui
+import keyboard
+from typing import Optional, Tuple, Callable
+import time
+
+BASE_ASSETS_PATH = "assets/spin/"
 
 class AntiAfkPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
     def __init__(self):
         super().__init__()
         self.worker = None
-        self.init_ui()
+        self._init_ui()
 
-    def init_ui(self):
+    def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
+
         self.switch = SwitchButton()
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
 
+        self.checkwheel = QtWidgets.QCheckBox('Авто Колесо — раз в 5 мин', self)
+        self.checkwheel.setGeometry(20, 85, 200, 20)
+
         switch_layout = QtWidgets.QHBoxLayout()
         switch_layout.addWidget(CommonLogger._make_label("Анти-АФК", 16))
         switch_layout.addStretch()
+        switch_layout.addWidget(self.checkwheel)
         switch_layout.addWidget(self.switch)
-
-        self.min_delay_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.max_delay_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.min_pause_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.max_pause_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-
-        for slider in [self.min_delay_slider, self.max_delay_slider, self.min_pause_slider, self.max_pause_slider]:
-            slider.setMinimum(5)
-            slider.setMaximum(100)
-            slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-
-        self.min_delay_slider.setValue(10)
-        self.max_delay_slider.setValue(35)
-        self.min_pause_slider.setValue(5)
-        self.max_pause_slider.setValue(20)
-
-        self.min_delay_slider.valueChanged.connect(self.update_min_label)
-        self.max_delay_slider.valueChanged.connect(self.update_max_label)
-        self.min_pause_slider.valueChanged.connect(self.update_min_pause_label)
-        self.max_pause_slider.valueChanged.connect(self.update_max_pause_label)
-
-        self.min_label = QtWidgets.QLabel("1.0 сек")
-        self.max_label = QtWidgets.QLabel("3.5 сек")
-        self.min_pause_label = QtWidgets.QLabel("0.5 сек")
-        self.max_pause_label = QtWidgets.QLabel("2.0 сек")
-
-        for lbl in [self.min_label, self.max_label, self.min_pause_label, self.max_pause_label]:
-            lbl.setStyleSheet("color: white;")
+        layout.addLayout(switch_layout)
 
         settings_group = QtWidgets.QGroupBox("")
         settings_group.setStyleSheet("QGroupBox { color: white; font-weight: bold; background: none; }")
@@ -60,42 +44,32 @@ class AntiAfkPage(QtWidgets.QWidget):
         settings_layout.setContentsMargins(10, 10, 10, 10)
 
         settings_layout.addWidget(CommonLogger._make_label("Время зажатия:", 17))
-        settings_layout.addLayout(self.create_slider_row("Мин. зажатие:", self.min_delay_slider, self.min_label))
-        settings_layout.addLayout(self.create_slider_row("Макс. зажатие:", self.max_delay_slider, self.max_label))
+        min_delay_row, self.min_delay_slider, self.min_label = CommonLogger.create_slider_row(
+            "Мин. зажатие:", minimum=5, maximum=100, default=10, step=0.1
+        )
+        max_delay_row, self.max_delay_slider, self.max_label = CommonLogger.create_slider_row(
+            "Макс. зажатие:", minimum=5, maximum=100, default=35, step=0.1
+        )
+        settings_layout.addLayout(min_delay_row)
+        settings_layout.addLayout(max_delay_row)
 
         settings_layout.addWidget(CommonLogger._make_label("Пауза между движениями:", 17))
-        settings_layout.addLayout(self.create_slider_row("Мин. пауза:", self.min_pause_slider, self.min_pause_label))
-        settings_layout.addLayout(self.create_slider_row("Макс. пауза:", self.max_pause_slider, self.max_pause_label))
-        settings_group.setStyleSheet("background: none;")
+        min_pause_row, self.min_pause_slider, self.min_pause_label = CommonLogger.create_slider_row(
+            "Мин. пауза:", minimum=5, maximum=100, default=5, step=0.1
+        )
+        max_pause_row, self.max_pause_slider, self.max_pause_label = CommonLogger.create_slider_row(
+            "Макс. пауза:", minimum=5, maximum=100, default=20, step=0.1
+        )
+        settings_layout.addLayout(min_pause_row)
+        settings_layout.addLayout(max_pause_row)
+
         settings_group.setLayout(settings_layout)
 
-        layout.addLayout(switch_layout)
         layout.addWidget(settings_group)
         layout.addStretch()
+
         self.log_output = CommonLogger.create_log_field(layout)
-
         self.setLayout(layout)
-
-    def create_slider_row(self, label_text, slider, value_label):
-        row = QtWidgets.QHBoxLayout()
-        label = QtWidgets.QLabel(label_text)
-        label.setStyleSheet("color: white;")
-        row.addWidget(label)
-        row.addWidget(slider)
-        row.addWidget(value_label)
-        return row
-
-    def update_min_label(self, value):
-        self.min_label.setText(f"{value / 10.0:.1f} сек")
-
-    def update_max_label(self, value):
-        self.max_label.setText(f"{value / 10.0:.1f} сек")
-
-    def update_min_pause_label(self, value):
-        self.min_pause_label.setText(f"{value / 10.0:.1f} сек")
-
-    def update_max_pause_label(self, value):
-        self.max_pause_label.setText(f"{value / 10.0:.1f} сек")
 
     def handle_toggle(self):
         ScriptController.toggle_script(widget=self,
@@ -103,7 +77,8 @@ class AntiAfkPage(QtWidgets.QWidget):
                 self.min_delay_slider.value() / 10.0,
                 self.max_delay_slider.value() / 10.0,
                 self.min_pause_slider.value() / 10.0,
-                self.max_pause_slider.value() / 10.0
+                self.max_pause_slider.value() / 10.0,
+                self.checkwheel.isChecked()
             ),
             log_output=self.log_output,
             status_signal=self.statusChanged
@@ -112,15 +87,18 @@ class AntiAfkPage(QtWidgets.QWidget):
 class AntiAfkWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
 
-    def __init__(self, min_delay=1.0, max_delay=3.5, min_pause=0.5, max_pause=2.0):
+    def __init__(self, min_delay=1.0, max_delay=3.5, min_pause=0.5, max_pause=2.0, checkwheel=False):
         super().__init__()
         self.running = True
         self.min_delay = min_delay
         self.max_delay = max_delay
         self.min_pause = min_pause
         self.max_pause = max_pause
+        self.checkwheel = checkwheel
         self.gamepad = vg.VX360Gamepad()
         self._stop = threading.Event()
+        self.confidence = 0.85
+        self.last_roulette_spin_time = time.time()
 
         self.DIRECTIONS = {
             'up': (0, 32767),
@@ -140,6 +118,68 @@ class AntiAfkWorker(QtCore.QThread):
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
+
+    def click_image_in_region(self,image_filename: str,region: Optional[Tuple[int, int, int, int]] = None,confidence: float = 0.85,click: Optional[Callable[[int, int], None]] = pyautogui.click) -> bool:
+        full_image_path = os.path.join(BASE_ASSETS_PATH, image_filename)
+        if not os.path.exists(full_image_path):
+            print(f"Ошибка: Файл изображения '{full_image_path}' не найден.")
+            return False
+        try:
+            location = pyautogui.locateOnScreen(full_image_path, region=region, confidence=confidence)
+
+            if location:
+                if click is not None:
+                    center_x, center_y = pyautogui.center(location)
+                    click(center_x, center_y)
+                    print(f"Изображение '{image_filename}' найдено и был выполнен клик по координатам ({center_x}, {center_y}).")
+                else:
+                    print(f"Изображение '{image_filename}' найдено, но клик не выполнялся (click=None).")
+                return True
+            else:
+                print(f"Изображение '{image_filename}' не найдено.")
+                return False
+        except Exception as e:
+            return False
+
+    def perform_roulette_spin(self):
+        screen_width, screen_height = pyautogui.size()
+        left_half_region = (0, 0, screen_width // 2, screen_height)
+        right_half_region = (screen_width // 2, 0, screen_width // 2, screen_height)
+        top_half_region = (0, 0, screen_width, screen_height // 2)
+        bottom_half_region = (0, screen_height // 2, screen_width, screen_height // 2)
+
+        pos = self.click_image_in_region("cols.jpg", region=top_half_region, click=None)
+        if pos:
+            self.log(f"[✓] Открываю телефон.")
+            keyboard.press_and_release('up')
+            self._stop.wait(2)
+
+            if self.click_image_in_region("casinoIcon.png", region=right_half_region):
+                self.log(f"[✓] Открыл казино.")
+                self._stop.wait(2)
+            else: 
+                return
+
+            if self.click_image_in_region('kasspin.jpg', region=left_half_region):
+                self.log(f"[✓] Открываю колесо удачи.")
+                self._stop.wait(2)
+            else:
+                return
+
+            if self.click_image_in_region("spinbutton.jpg", region=bottom_half_region):
+                self.log(f"[✓] Кручу.")
+                self._stop.wait(3)
+            else: 
+                return
+
+            self._stop.wait(0.5)
+            keyboard.press_and_release('esc')
+            self._stop.wait(0.5)
+            keyboard.press_and_release('esc')
+            self._stop.wait(0.5)
+            keyboard.press_and_release('backspace')
+        else:
+            self.log("[→] пропускаем колесо")
 
     def run(self):
         self.log("[→] Скрипт анти-АФК запущен.")
@@ -163,6 +203,12 @@ class AntiAfkWorker(QtCore.QThread):
                 self.log(f"[…] Пауза между: {pause_time:.2f} сек.")
                 if self._stop.wait(pause_time):
                     break
+
+                current_time = time.time()
+                if self.checkwheel and (current_time - self.last_roulette_spin_time >= 300):
+                    self.perform_roulette_spin()
+                    self.last_roulette_spin_time = current_time
+
         except Exception as e:
             self.log(f"[Ошибка] {e}")
         finally:

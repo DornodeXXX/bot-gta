@@ -10,7 +10,7 @@ def main():
     app.setStyle("Fusion")
 
     font = app.font()
-    font.setFamily("Segoe UI")
+    font.setFamily("Helvetica")
     font.setPointSize(10)
     app.setFont(font)
 

@@ -32,32 +32,9 @@ class GymPage(QtWidgets.QWidget):
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
         self.counter_label.setObjectName("counter_label")
         
-        hotkey_layout = QtWidgets.QHBoxLayout()
-        hotkey_layout.setContentsMargins(0, 0, 0, 0)
-        hotkey_layout.setSpacing(5)
-        
-        input_group = QtWidgets.QHBoxLayout()
-        input_group.setSpacing(5)
-        input_group.setContentsMargins(0, 0, 0, 0)
-        
-        self.hotkey_input = QtWidgets.QLineEdit("f5")
-        self.hotkey_input.setMaxLength(20)
-        self.hotkey_input.setFixedWidth(50)
-        self.hotkey_input.setAlignment(QtCore.Qt.AlignCenter)
-        self.hotkey_input.setStyleSheet("""
-            background-color: #222; 
-            color: white;
-            font-size: 12px;
-        """)
-        
-        hotkey_description = QtWidgets.QLabel("— вкл/выкл автонажатие E")
-        hotkey_description.setObjectName("hotkey_description")
-            
-        input_group.addWidget(self.hotkey_input)
-        input_group.addWidget(hotkey_description)
-        
-        hotkey_layout.addWidget(CommonLogger._make_label("Горячая клавиша:", 14))
-        hotkey_layout.addLayout(input_group)
+        hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
+            default="f5", description="— вкл/выкл автонажатие E"
+        )
         
         layout.addLayout(hotkey_layout)
         
@@ -138,18 +115,25 @@ class GymWorker(QtCore.QThread):
 
             return True
         return False
-
+    
     def _auto_detect_region(self):
         screen_width, screen_height = pyautogui.size()
+
         region_width = int(screen_width * 0.5)
         region_height = int(screen_height * 0.7)
-        vertical_position_ratio = 0.25
+
+        reference_height = 1440
+        reference_top = 560
+        #vertical_position_ratio = 0.25
+        vertical_position_ratio = reference_top / reference_height
+
         return {
             'left': int((screen_width - region_width) / 2),
             'top': int(screen_height * vertical_position_ratio),
             'width': region_width,
             'height': region_height
         }
+    
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)

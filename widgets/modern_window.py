@@ -18,13 +18,13 @@ import urllib.error
 import webbrowser
 
 class ModernWindow(QtWidgets.QMainWindow):
-    CURRENT_VERSION = "2.7"
+    CURRENT_VERSION = "2.8"
 
     def __init__(self):
         super().__init__()
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Window)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self.resize(720, 500)
+        self.resize(720, 600)
         self.setWindowIcon(QtGui.QIcon("icon.png"))
         
         self.setObjectName("MainWindow")
@@ -109,7 +109,6 @@ class ModernWindow(QtWidgets.QMainWindow):
             }
         """ % COLORS["border"])
 
-
         self._buttons = []
         self._indicators = []
         self._pages = []
@@ -181,29 +180,20 @@ class ModernWindow(QtWidgets.QMainWindow):
     def _prepare_modules(self):
         data = {
             "Главная": [
-                ("Главная", "📇", IndexPage, True)
-            ],
-            "⚖️ Деморган": [
+                ("Главная", "📇", IndexPage, True),
                 ("Швейка", "👕", ShveikaPage, True),
-                ("Токарь", "⚙️", TokarPage, True)
-            ],
-            "💼 Работы": [
+                ("Токарь", "⚙️", TokarPage, True),
                 ("Стройка\nШахта", "🚧", StroykaPage, True),
                 ("Порт", "🚢", PortPage, True),
-                ("Коровы", "🐄", CowPage, True)
-            ],
-            "💪 Развитие": [
+                ("Коровы", "🐄", CowPage, True),
                 ("Качалка", "🏋️", GymPage, True),
-                ("Кулинария", "🍜", GotovkaPage, True)
-            ],
-            "🛠 Прочее": [
-                ("Анти-АФК", "🎯", AntiAfkPage, True)
+                ("Кулинария", "🍜", GotovkaPage, True),
+                ("Анти-АФК", "🎯", AntiAfkPage, True),
             ],
         }
         flat = []
-        for group_name, items in data.items():
+        for _, items in data.items():
             for item in items:
-                name, icon, page_class, enabled = item
                 flat.append(item)
         return flat
 
@@ -216,7 +206,6 @@ class ModernWindow(QtWidgets.QMainWindow):
                 self.stack.setCurrentIndex(i)
                 break
                 
-
     def check_for_updates(self):
         try:
             version_url = "https://raw.githubusercontent.com/DornodeXXX/bot-gta/main/version.txt"

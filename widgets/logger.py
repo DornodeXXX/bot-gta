@@ -70,13 +70,11 @@ class CommonLogger:
             CommonLogger.log(f"[Ошибка] Файл не найден: {file_path}", log_signal)
         return exists
         
-        
     @staticmethod
     def _make_label(text: str, size: int) -> QtWidgets.QLabel:
         lbl = QtWidgets.QLabel(text)
         lbl.setStyleSheet(f"background:none;color:white;font-size:{size}px;")
         return lbl
-        
         
     @staticmethod
     def create_log_field(layout):
@@ -87,6 +85,64 @@ class CommonLogger:
         log_field.setMinimumHeight(100)
         layout.addWidget(log_field)
         return log_field
+    
+    @staticmethod
+    def create_slider_row(title: str, minimum: int, maximum: int, default: int, suffix: str = "сек", step: float = 0.1):
+        layout = QtWidgets.QHBoxLayout()
+        layout.setSpacing(5)
+
+        label = QtWidgets.QLabel(title)
+        label.setStyleSheet("color: white;")
+        
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        slider.setMinimum(minimum)
+        slider.setMaximum(maximum)
+        slider.setValue(default)
+        slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        
+        value_label = QtWidgets.QLabel(f"{default * step:.1f} {suffix}")
+        value_label.setStyleSheet("color: white;")
+        
+        def update_label(val):
+            value_label.setText(f"{val * step:.1f} {suffix}")
+        slider.valueChanged.connect(update_label)
+
+        layout.addWidget(label)
+        layout.addWidget(slider)
+        layout.addWidget(value_label)
+
+        return layout, slider, value_label
+    
+    @staticmethod
+    def create_hotkey_input(default: str = "f5", description: str = "— вкл/выкл автонажатие E"):
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        input_group = QtWidgets.QHBoxLayout()
+        input_group.setSpacing(5)
+        input_group.setContentsMargins(0, 0, 0, 0)
+
+        hotkey_input = QtWidgets.QLineEdit(default)
+        hotkey_input.setMaxLength(20)
+        hotkey_input.setFixedWidth(50)
+        hotkey_input.setAlignment(QtCore.Qt.AlignCenter)
+        hotkey_input.setStyleSheet("""
+            background-color: #222; 
+            color: white;
+            font-size: 12px;
+        """)
+
+        hotkey_description = QtWidgets.QLabel(description)
+        hotkey_description.setObjectName("hotkey_description")
+
+        input_group.addWidget(hotkey_input)
+        input_group.addWidget(hotkey_description)
+
+        layout.addWidget(QtWidgets.QLabel("Горячая клавиша:"))
+        layout.addLayout(input_group)
+
+        return layout, hotkey_input
         
 class ScriptController:
     @staticmethod

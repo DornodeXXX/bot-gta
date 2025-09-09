@@ -3,6 +3,7 @@ from widgets.switch_button import SwitchButton
 import time
 import keyboard
 import pyautogui
+from pynput.keyboard import Controller, Key
 import cv2
 import numpy as np
 import mss
@@ -32,68 +33,33 @@ class CowPage(QtWidgets.QWidget):
         self.counter_label = QtWidgets.QLabel("Счётчик: 0")
         self.counter_label.setObjectName("counter_label")
         
-        hotkey_layout = QtWidgets.QHBoxLayout()
-        hotkey_layout.setContentsMargins(0, 0, 0, 0)
-        hotkey_layout.setSpacing(5)
-        
-        input_group = QtWidgets.QHBoxLayout()
-        input_group.setSpacing(5)
-        input_group.setContentsMargins(0, 0, 0, 0)
-        
-        self.hotkey_input = QtWidgets.QLineEdit("f5")
-        self.hotkey_input.setMaxLength(20)
-        self.hotkey_input.setFixedWidth(50)
-        self.hotkey_input.setAlignment(QtCore.Qt.AlignCenter)
-        self.hotkey_input.setStyleSheet("""
-            background-color: #222; 
-            color: white;
-            font-size: 12px;
-        """)
-        
-        hotkey_description = QtWidgets.QLabel("— вкл/выкл автонажатие E")
-        hotkey_description.setObjectName("hotkey_description")
-            
-        input_group.addWidget(self.hotkey_input)
-        input_group.addWidget(hotkey_description)
-        
-        hotkey_layout.addWidget(CommonLogger._make_label("Горячая клавиша:", 14))
-        hotkey_layout.addLayout(input_group)
-        
-        self.pause_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.pause_slider.setMinimum(0)
-        self.pause_slider.setMaximum(100)
-        self.pause_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        self.pause_slider.setValue(1)
-        self.pause_slider.valueChanged.connect(self.update_min_label)
-        self.min_label = QtWidgets.QLabel("0.1 сек")
-        self.min_label.setStyleSheet("color: white;")
+        hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
+            default="f5", description="— вкл/выкл автонажатие E"
+        )
+
         settings_group = QtWidgets.QGroupBox("")
         settings_group.setStyleSheet("QGroupBox { color: white; font-weight: bold; background: none; }")
+
         settings_layout = QtWidgets.QVBoxLayout()
         settings_layout.setSpacing(10)
         settings_layout.setContentsMargins(10, 10, 10, 10)
-        settings_layout.addLayout(self.create_slider_row("Время паузы:", self.pause_slider, self.min_label))
+
+        pause_layout, self.pause_slider, self.min_label = CommonLogger.create_slider_row(
+            "Время паузы:", minimum=0, maximum=100, default=1, suffix="сек", step=0.1
+        )
+
         settings_group.setStyleSheet("background: none;")
         settings_group.setLayout(settings_layout)
-        
+
+        settings_layout.addLayout(pause_layout)
         layout.addLayout(hotkey_layout)
         layout.addWidget(settings_group)
         layout.addWidget(self.counter_label)
         layout.addStretch()
         
+        CommonLogger.create_slider_row
+
         self.log_output = CommonLogger.create_log_field(layout)
-        
-    def create_slider_row(self, label_text, slider, value_label):
-        row = QtWidgets.QHBoxLayout()
-        label = QtWidgets.QLabel(label_text)
-        label.setStyleSheet("color: white;")
-        row.addWidget(label)
-        row.addWidget(slider)
-        row.addWidget(value_label)
-        return row
-        
-    def update_min_label(self, value):
-        self.min_label.setText(f"{value / 10.0:.1f} сек")
         
     def handle_toggle(self):
         ScriptController.toggle_script(
@@ -194,7 +160,10 @@ class CowWorker(QtCore.QThread):
                     if "1" in scores and "2" in scores:
                         brighter = max(scores, key=scores.get)
                         if brighter == "1":
-                            keyboard.send("a")
+                            keyboard_controller = Controller()
+                            keyboard_controller.press("a")
+                            time.sleep(0.01)
+                            keyboard_controller.release("a")
                             self._count += 1
                             self.log(f"[✓] найдена → A (#{self._count})")
                         else:
@@ -209,7 +178,6 @@ class CowWorker(QtCore.QThread):
                             
                     if self._stop.wait(self.pause_delay):
                         break
-                    #time.sleep(self.pause_delay)
 
             except Exception as exc:
                 self.log(f"[Ошибка потока] {str(exc)}")

@@ -1,6 +1,7 @@
 from PyQt5 import QtWidgets, QtCore
 from widgets.switch_button import SwitchButton
 import os
+from pynput.keyboard import Controller, Key
 import time
 import keyboard
 from widgets.logger import CommonLogger, ScriptController
@@ -108,11 +109,10 @@ class StroykaWorker(QtCore.QThread):
             self.log(f"[✓] Найдено → спам '{key}'")
 
         while self.running and self.safe_locate(path):
-            if key == "f":
-                keyboard.send(key)
-            else:
-                keyboard.press_and_release(key)
-                
+            keyboard_controller = Controller()
+            keyboard_controller.press(key)
+            time.sleep(0.01)
+            keyboard_controller.release(key)
             time.sleep(0.03)
 
         self._visible[path] = False
