@@ -5,7 +5,7 @@ import keyboard
 import pygetwindow as gw
 import pyautogui
 from widgets.logger import CommonLogger, ScriptController
-
+import numpy as np
 
 class PortPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -72,6 +72,7 @@ class PortWorker(QtCore.QThread):
         self._move_enabled = False
         self._toggle_requested = False
         self.hotkey = hotkey or "f5"
+        self.monitor = self._auto_detect_region()
 
         keyboard.add_hotkey(self.hotkey, self._request_toggle_move)
 
@@ -86,6 +87,18 @@ class PortWorker(QtCore.QThread):
             keyboard.release("w")
             self._move_enabled = False
             self.log("[■] Движение отключено (Shift+W отпущены)")
+
+    def _auto_detect_region(self):
+        screen_width, screen_height = pyautogui.size()
+        region_width = int(screen_width * 0.5)
+        region_height = int(screen_height * 0.7)
+        vertical_position_ratio = 0.25
+        return {
+            'left': int((screen_width - region_width) / 2),
+            'top': int(screen_height * vertical_position_ratio),
+            'width': region_width,
+            'height': region_height
+        }
 
     def _request_toggle_move(self):
         self._toggle_requested = True
@@ -132,7 +145,7 @@ class PortWorker(QtCore.QThread):
                         self.log("[■] Движение отключено (Shift+W отпущены)")
                     self._toggle_requested = False
 
-                screenshot = pyautogui.screenshot()
+                screenshot = pyautogui.screenshot(region=tuple(self.monitor.values()))
                 pixels = screenshot.load()
                 width, height = screenshot.size
                 found = False

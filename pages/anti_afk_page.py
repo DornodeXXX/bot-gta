@@ -29,6 +29,25 @@ class AntiAfkPage(QtWidgets.QWidget):
 
         self.checkwheel = QtWidgets.QCheckBox('Авто Колесо — раз в 5 мин', self)
         self.checkwheel.setGeometry(20, 85, 200, 20)
+        self.checkwheel.setStyleSheet("""
+            QCheckBox {
+                color: white;
+            }
+
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 2px solid #ffffff;
+                border-radius: 8px;
+                background: transparent;
+            }
+
+            QCheckBox::indicator:checked {
+                border: 2px solid #0A84FF;
+                background-color: #0A84FF;
+                image: url(assets/check.png);
+            }
+        """)
 
         switch_layout = QtWidgets.QHBoxLayout()
         switch_layout.addWidget(CommonLogger._make_label("Анти-АФК", 16))
