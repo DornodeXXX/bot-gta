@@ -37,13 +37,13 @@ class AntiAfkPage(QtWidgets.QWidget):
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
-                border: 2px solid #ffffff;
-                border-radius: 8px;
+                border: 1px solid #ffffff;
+                border-radius: 9px;
                 background: transparent;
             }
 
             QCheckBox::indicator:checked {
-                border: 2px solid #0A84FF;
+                border: 1px solid #0A84FF;
                 background-color: #0A84FF;
                 image: url(assets/check.png);
             }
