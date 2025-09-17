@@ -7,7 +7,7 @@ from pynput.keyboard import Controller, Key
 import cv2
 import numpy as np
 import mss
-from widgets.logger import CommonLogger, ScriptController, HotkeyManager
+from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region, load_images
 import threading
 
 class CowPage(QtWidgets.QWidget):
@@ -15,7 +15,9 @@ class CowPage(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.worker: CowWorker | None = None
+        self.settings = SettingsManager()
         self._init_ui()
+        self._load_settings()
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -30,8 +32,7 @@ class CowPage(QtWidgets.QWidget):
         switch_layout.addWidget(self.switch)
         layout.addLayout(switch_layout)
         
-        self.counter_label = QtWidgets.QLabel("Счётчик: 0")
-        self.counter_label.setObjectName("counter_label")
+        self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
         
         hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
             default="f5", description="— вкл/выкл автонажатие E"
@@ -61,7 +62,18 @@ class CowPage(QtWidgets.QWidget):
 
         self.log_output = CommonLogger.create_log_field(layout)
         
+    def _load_settings(self):
+        self.hotkey_input.setText(self.settings.get("cow", "hotkey_port", "f5"))
+        self.pause_slider.setValue(self.settings.get("cow", "pause", 1))
+
+    def _save_settings(self):
+        self.settings.save_group("cow", {
+            "pause": self.pause_slider.value(),
+            "hotkey_port": self.hotkey_input.text()
+        })
+
     def handle_toggle(self):
+        self._save_settings()
         ScriptController.toggle_script(
             widget=self,
             worker_factory=CowWorker,
@@ -80,20 +92,18 @@ class CowWorker(QtCore.QThread):
 
     def __init__(self, pause_delay=0 ,hotkey: str = 'f5'):
         super().__init__()
-        self._running = True
+        self.running = True
         self._count = 0
-        self.templates = self._load_templates()
-        self.monitor = self._auto_detect_region()
+        self.templates = load_images("cow", mapping={"1.png": "1", "2.png": "2"}, as_cv2=True)
+        self.monitor = auto_detect_region(width_ratio=1.0, height_ratio=0.65, top_ratio=0.35)
         self._move_enabled = False
         self._toggle_requested = False
         self.pause_delay = pause_delay
         self._stop = threading.Event()
-        
         self._hotkey = (hotkey or 'f5').lower().strip()
         self._hotkey_id = None
         self._auto_e_enabled = False
         self._last_e_time = 0.0
-        
         self.hotkey_manager = HotkeyManager(
             hotkey=hotkey,
             toggle_callback=self._on_toggle_auto_e,
@@ -102,33 +112,9 @@ class CowWorker(QtCore.QThread):
 
     def _on_toggle_auto_e(self, enabled: bool):
         self._auto_e_enabled = enabled
-        
-    def _load_templates(self):
-        t1 = cv2.imread("assets/cow/1.png", cv2.IMREAD_UNCHANGED)
-        t2 = cv2.imread("assets/cow/2.png", cv2.IMREAD_UNCHANGED)
-        if t1 is None or t2 is None:
-            raise FileNotFoundError("Не найдены шаблоны")
-        return {
-            "1": t1[:, :, :3],
-            "2": t2[:, :, :3]
-        }
-
-    def _auto_detect_region(self):
-        screen_width, screen_height = pyautogui.size()
-        region_height = int(screen_height * 0.65)
-        return {
-            "left": 0,
-            "top": int(screen_height * 0.35),
-            "width": screen_width,
-            "height": region_height
-        }
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
-
-    def stop(self):
-        self._running = False
-        self._stop.set()
         
     def run(self):
         self.hotkey_manager.register()
@@ -137,7 +123,7 @@ class CowWorker(QtCore.QThread):
             self.log(f"Область поиска: {self.monitor}")
 
             try:
-                while self._running and not self._stop.is_set():
+                while self.running and not self._stop.is_set():
                     frame = np.array(sct.grab(self.monitor))
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 

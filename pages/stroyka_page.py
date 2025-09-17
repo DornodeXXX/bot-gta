@@ -1,10 +1,10 @@
 from PyQt5 import QtWidgets, QtCore
 from widgets.switch_button import SwitchButton
 import os
-from pynput.keyboard import Controller, Key
+from pynput.keyboard import Controller
 import time
-import keyboard
-from widgets.logger import CommonLogger, ScriptController
+from widgets.common import CommonLogger, ScriptController, load_images
+import threading
 
 class StroykaPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -55,28 +55,21 @@ class StroykaWorker(QtCore.QThread):
         super().__init__()
         self.running = False
         self.count = 0
-        self.img_key = self._load_image_mappings()
+        self.img_key = load_images("stroyka", mapping={
+            "image1.png": "e",
+            "image2.png": "y",
+            "image3.png": "f",
+            "image4.png": "h",
+        })
         self._shown = {p: False for p in self.img_key}
         self._visible = {p: False for p in self.img_key}
-
-
-    def _load_image_mappings(self) -> dict:
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return {
-            os.path.join(base, "assets", "stroyka", "image1.png"): "e",
-            os.path.join(base, "assets", "stroyka", "image2.png"): "y",
-            os.path.join(base, "assets", "stroyka", "image3.png"): "f",
-            os.path.join(base, "assets", "stroyka", "image4.png"): "h",
-        }
+        self._stop = threading.Event()
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
 
     def safe_locate(self, path: str):
         return CommonLogger.safe_locate(path, self.CONFIDENCE, self.log_signal)
-
-    def stop(self):
-        self.running = False
 
     def run(self):
         self.running = True
@@ -85,7 +78,7 @@ class StroykaWorker(QtCore.QThread):
         try:
             while self.running:
                 self._process_images()
-                time.sleep(0.10)
+                self._stop.wait(0.1)
         except Exception as e:
             self.log(f"[Критическая ошибка]\n{str(e)}")
         finally:
@@ -111,9 +104,9 @@ class StroykaWorker(QtCore.QThread):
         while self.running and self.safe_locate(path):
             keyboard_controller = Controller()
             keyboard_controller.press(key)
-            time.sleep(0.01)
+            self._stop.wait(0.01)
             keyboard_controller.release(key)
-            time.sleep(0.03)
+            self._stop.wait(0.03)
 
         self._visible[path] = False
 

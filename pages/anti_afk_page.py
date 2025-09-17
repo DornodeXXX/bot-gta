@@ -1,23 +1,56 @@
-from widgets.switch_button import SwitchButton
 from PyQt5 import QtWidgets, QtCore
 import random
-import vgamepad as vg
-from widgets.logger import CommonLogger, ScriptController
 import threading
 import os
+import sys
 import pyautogui
 import keyboard
 from typing import Optional, Tuple, Callable
 import time
+from widgets.common import CommonLogger, ScriptController, SettingsManager
+from widgets.switch_button import SwitchButton
 
 BASE_ASSETS_PATH = "assets/spin/"
 
 class AntiAfkPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
+    def _init_gamepad(self, retries=2, delay=1.0):
+        try:
+            import vgamepad as vg
+        except Exception:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Библиотека vgamepad не найдена.\nУстановите её: pip install vgamepad"
+            )
+            sys.exit(1)
+
+        last_exception = None
+        for attempt in range(retries):
+            try:
+                gamepad = vg.VX360Gamepad()
+                gamepad.reset()
+                gamepad.update()
+                QtCore.QThread.msleep(int(delay * 1000))
+                return gamepad
+            except Exception as e:
+                last_exception = e
+                QtCore.QThread.msleep(int(delay * 1000))
+
+        QtWidgets.QMessageBox.critical(
+            self,
+            "Ошибка",
+            f"Не удалось инициализировать виртуальный геймпад.\n\n{last_exception}"
+        )
+        sys.exit(1)
+
     def __init__(self):
         super().__init__()
+        self.gamepad = self._init_gamepad()
         self.worker = None
+        self.settings = SettingsManager()
         self._init_ui()
+        self._load_settings()
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -29,21 +62,21 @@ class AntiAfkPage(QtWidgets.QWidget):
 
         self.checkwheel = QtWidgets.QCheckBox('Авто Колесо — раз в 5 мин', self)
         self.checkwheel.setGeometry(20, 85, 200, 20)
+        self.checkwheel.setCursor(QtCore.Qt.PointingHandCursor)
         self.checkwheel.setStyleSheet("""
             QCheckBox {
                 color: white;
             }
 
             QCheckBox::indicator {
-                width: 17px;
-                height: 17px;
-                border: 2px solid #ffffff;
-                border-radius: 10px;
+                width: 15px;
+                height: 15px;
+                border: 1px solid #ffffff;
                 background: transparent;
             }
 
             QCheckBox::indicator:checked {
-                border: 2px solid #0A84FF;
+                border: 1px solid #0A84FF;
                 background-color: #0A84FF;
                 image: url(assets/check.png);
             }
@@ -90,14 +123,32 @@ class AntiAfkPage(QtWidgets.QWidget):
         self.log_output = CommonLogger.create_log_field(layout)
         self.setLayout(layout)
 
+    def _load_settings(self):
+        self.min_delay_slider.setValue(self.settings.get("anti_afk", "min_delay", 10))
+        self.max_delay_slider.setValue(self.settings.get("anti_afk", "max_delay", 35))
+        self.min_pause_slider.setValue(self.settings.get("anti_afk", "min_pause", 5))
+        self.max_pause_slider.setValue(self.settings.get("anti_afk", "max_pause", 20))
+        self.checkwheel.setChecked(self.settings.get("anti_afk", "auto_wheel", False))
+
+    def _save_settings(self):
+        self.settings.save_group("anti_afk", {
+            "min_delay": self.min_delay_slider.value(),
+            "max_delay": self.max_delay_slider.value(),
+            "min_pause": self.min_pause_slider.value(),
+            "max_pause": self.max_pause_slider.value(),
+            "auto_wheel": self.checkwheel.isChecked()
+        })
+
     def handle_toggle(self):
+        self._save_settings()
         ScriptController.toggle_script(widget=self,
             worker_factory=lambda: AntiAfkWorker(
                 self.min_delay_slider.value() / 10.0,
                 self.max_delay_slider.value() / 10.0,
                 self.min_pause_slider.value() / 10.0,
                 self.max_pause_slider.value() / 10.0,
-                self.checkwheel.isChecked()
+                self.checkwheel.isChecked(),
+                self.gamepad
             ),
             log_output=self.log_output,
             status_signal=self.statusChanged
@@ -106,7 +157,7 @@ class AntiAfkPage(QtWidgets.QWidget):
 class AntiAfkWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
 
-    def __init__(self, min_delay=1.0, max_delay=3.5, min_pause=0.5, max_pause=2.0, checkwheel=False):
+    def __init__(self, min_delay=1.0, max_delay=3.5, min_pause=0.5, max_pause=2.0, checkwheel=False, gamepad=False):
         super().__init__()
         self.running = True
         self.min_delay = min_delay
@@ -114,7 +165,7 @@ class AntiAfkWorker(QtCore.QThread):
         self.min_pause = min_pause
         self.max_pause = max_pause
         self.checkwheel = checkwheel
-        self.gamepad = vg.VX360Gamepad()
+        self.gamepad = gamepad
         self._stop = threading.Event()
         self.confidence = 0.85
         self.last_roulette_spin_time = time.time()
@@ -130,10 +181,6 @@ class AntiAfkWorker(QtCore.QThread):
             'down_left': (-20000, -20000),
             'center': (0, 0)
         }
-
-    def stop(self):
-        self.running = False
-        self._stop.set()
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
@@ -173,7 +220,7 @@ class AntiAfkWorker(QtCore.QThread):
             keyboard.press_and_release('up')
             self._stop.wait(2)
 
-            if self.click_image_in_region("casinoIcon.png", region=right_half_region):
+            if self.click_image_in_region("casinoIcon.png", region=right_half_region,confidence=0.55):
                 self.log(f"[✓] Открыл казино.")
                 self._stop.wait(2)
             else: 

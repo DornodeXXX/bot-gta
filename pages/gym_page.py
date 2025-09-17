@@ -6,7 +6,7 @@ import pyautogui
 import cv2
 import numpy as np
 import mss
-from widgets.logger import CommonLogger, ScriptController, HotkeyManager
+from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region
 
 class GymPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -14,7 +14,9 @@ class GymPage(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.worker: GymWorker | None = None
+        self.settings = SettingsManager()
         self._init_ui()
+        self._load_settings()
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -29,8 +31,7 @@ class GymPage(QtWidgets.QWidget):
         switch_layout.addWidget(self.switch)
         layout.addLayout(switch_layout)
 
-        self.counter_label = QtWidgets.QLabel("Счётчик: 0")
-        self.counter_label.setObjectName("counter_label")
+        self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
         
         hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
             default="f5", description="— вкл/выкл автонажатие E"
@@ -43,7 +44,16 @@ class GymPage(QtWidgets.QWidget):
 
         self.log_output = CommonLogger.create_log_field(layout)
 
+    def _load_settings(self):
+        self.hotkey_input.setText(self.settings.get("gym", "hotkey_port", "f5"))
+
+    def _save_settings(self):
+        self.settings.save_group("gym", {
+            "hotkey_port": self.hotkey_input.text()
+        })
+
     def handle_toggle(self):
+        self._save_settings()
         ScriptController.toggle_script(
             widget=self,
             worker_factory=GymWorker,
@@ -69,14 +79,13 @@ class GymWorker(QtCore.QThread):
     
     def __init__(self, monitor: dict = None, hotkey: str = 'f5'):
         super().__init__()
-        self._running = True
+        self.running = True
         self._count = 0
-        self.monitor = monitor or self._auto_detect_region()
+        self.monitor = monitor or auto_detect_region(reference_height=1440, reference_top=560)
         self._hotkey = (hotkey or 'f5').lower().strip()
         self._hotkey_id = None
         self._auto_e_enabled = False
         self._last_e_time = 0.0
-        
         self.hotkey_manager = HotkeyManager(
             hotkey=hotkey,
             toggle_callback=self._on_toggle_auto_e,
@@ -115,31 +124,9 @@ class GymWorker(QtCore.QThread):
 
             return True
         return False
-    
-    def _auto_detect_region(self):
-        screen_width, screen_height = pyautogui.size()
-
-        region_width = int(screen_width * 0.5)
-        region_height = int(screen_height * 0.7)
-
-        reference_height = 1440
-        reference_top = 560
-        #vertical_position_ratio = 0.25
-        vertical_position_ratio = reference_top / reference_height
-
-        return {
-            'left': int((screen_width - region_width) / 2),
-            'top': int(screen_height * vertical_position_ratio),
-            'width': region_width,
-            'height': region_height
-        }
-    
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
-        
-    def stop(self):
-        self._running = False
 
     def run(self):
         lower, upper = self.rgb_to_hsv_bounds(self.TARGET_RGB, self.H_TOL, self.S_TOL, self.V_TOL)
@@ -150,7 +137,7 @@ class GymWorker(QtCore.QThread):
         self.hotkey_manager.register()
         try:
             with mss.mss() as sct:
-                while self._running:
+                while self.running:
                     img = np.array(sct.grab(self.monitor))
                     frame_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
@@ -173,4 +160,4 @@ class GymWorker(QtCore.QThread):
             self.log(f"[Ошибка потока] {exc}")
         finally:
             self.hotkey_manager.unregister()
-            self._running = False
+            self.running = False

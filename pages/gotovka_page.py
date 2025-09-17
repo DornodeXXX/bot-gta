@@ -3,7 +3,8 @@ from widgets.switch_button import SwitchButton
 import pyautogui
 import time
 import os
-from widgets.logger import CommonLogger, ScriptController
+from widgets.common import CommonLogger, ScriptController
+import threading
 
 BASE_ASSETS_PATH = "assets/cook/"
 RECIPES = {
@@ -87,13 +88,11 @@ class GotovkaWorker(QtCore.QThread):
 
     def __init__(self, dish_name: str):
         super().__init__()
-        self._running = True
+        self._stop = threading.Event()
+        self.running = True
         self.dish_name = dish_name
         self.confidence = 0.85
         self.cycles_count = 0
-
-    def stop(self):
-        self._running = False
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
@@ -119,11 +118,11 @@ class GotovkaWorker(QtCore.QThread):
     def _execute_recipe(self) -> bool:
         recipe_steps = RECIPES.get(self.dish_name)
         for image_filename, action_type in recipe_steps:
-            if not self._running:
+            if not self.running:
                 return False
             if not self._find_and_perform_action(image_filename, action_type):
                 return False
-            time.sleep(0.1)
+            self._stop.wait(0.1)
 
         self.log(f"[✓] Все шаги для приготовления '{self.dish_name}' выполнены.")
         return True
@@ -134,12 +133,12 @@ class GotovkaWorker(QtCore.QThread):
         waiting_for_recipe_elements = False
 
         try:
-            while self._running:
+            while self.running:
                 if not CommonLogger.is_rage_mp_active():
                     if not rage_window_missing:
                         self.log("[!] Окно RAGE Multiplayer не активно. Ожидание...")
                         rage_window_missing = True
-                    time.sleep(1)
+                    self._stop.wait(1)
                     continue
                 else:
                     if rage_window_missing:
@@ -151,16 +150,16 @@ class GotovkaWorker(QtCore.QThread):
                     self.log(f"[✓] Цикл готовки №{self.cycles_count} для '{self.dish_name}' завершён.")
                     self.log("Ожидание перезарядки (5.5 секунд)...")
                     waiting_for_recipe_elements = False
-                    time.sleep(5.5)
+                    self._stop.wait(5.5)
                 else:
                     if not waiting_for_recipe_elements:
                         self.log(f"[!] Ожидание появления всех элементов для '{self.dish_name}'...")
                         waiting_for_recipe_elements = True
-                    time.sleep(1.0)
+                    self._stop.wait(1)
 
         except Exception as exc:
             self.log(f"[Ошибка потока] {exc}")
         finally:
-            if self._running:
+            if self.running:
                 self.log("[■] Скрипт готовки завершён.")
 
