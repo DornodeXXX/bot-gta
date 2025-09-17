@@ -1,7 +1,6 @@
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
-from widgets.modern_window import ModernWindow
-from widgets.styles import COLORS
+from widgets import COLORS, ModernWindow
 
 def main():
     QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
