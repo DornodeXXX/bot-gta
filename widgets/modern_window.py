@@ -1,24 +1,42 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-from widgets.styles import COLORS
-from widgets.module_button import ModuleButton
-from widgets.titlebar import TitleBar
+from functools import partial
+import urllib.request
+import urllib.error
+import webbrowser
+from packaging import version
+from widgets import COLORS, ModuleButton, TitleBar, StatusPulseDot
 from pages.index_page import IndexPage
 from pages.port_page import PortPage
 from pages.anti_afk_page import AntiAfkPage
 from pages.stroyka_page import StroykaPage
-from pages.shveika_page import ShveikaPage
 from pages.gotovka_page import GotovkaPage
 from pages.cow_page import CowPage
 from pages.gym_page import GymPage
-from pages.tokar_page import TokarPage
-from widgets.status_dot import StatusPulseDot
-from widgets.switch_button import SwitchButton
-import urllib.request
-import urllib.error
-import webbrowser
+from pages.demorgan_page import DemorganPage
+
+class UpdateChecker(QtCore.QObject):
+    update_available = QtCore.pyqtSignal(str)
+    finished = QtCore.pyqtSignal()
+
+    def __init__(self, current_version):
+        super().__init__()
+        self.current_version = current_version
+
+    @QtCore.pyqtSlot()
+    def check(self):
+        try:
+            version_url = "https://raw.githubusercontent.com/DornodeXXX/bot-gta/main/version.txt"
+            with urllib.request.urlopen(version_url, timeout=5) as response:
+                latest_version_str = response.read().decode('utf-8').strip()
+                if version.parse(latest_version_str) > version.parse(self.current_version):
+                    self.update_available.emit(latest_version_str)
+        except (urllib.error.URLError, ValueError) as e:
+            print(f"Could not check for updates: {e}")
+        finally:
+            self.finished.emit()
 
 class ModernWindow(QtWidgets.QMainWindow):
-    CURRENT_VERSION = "2.8"
+    CURRENT_VERSION = "2.9"
 
     def __init__(self):
         super().__init__()
@@ -26,205 +44,152 @@ class ModernWindow(QtWidgets.QMainWindow):
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.resize(720, 600)
         self.setWindowIcon(QtGui.QIcon("icon.png"))
-        
         self.setObjectName("MainWindow")
         
         self.container = QtWidgets.QFrame()
         self.container.setObjectName("rootContainer")
-        self.container.setStyleSheet("""
-            QFrame#rootContainer {
+        self.container.setStyleSheet(f"""
+            QFrame#rootContainer {{
                 border-radius: 16px;
                 background-color: rgba(18, 18, 20, 200);
-            }
-        """ % COLORS)
-        '''background-color: %(bg)s;'''
-
-        self.shadow = QtWidgets.QGraphicsDropShadowEffect(self.container)
-        self.shadow.setBlurRadius(30)
-        self.shadow.setOffset(0, 10)
-        self.shadow.setColor(QtGui.QColor(0, 0, 0, 160))
-        self.container.setGraphicsEffect(self.shadow)
-
-        root = QtWidgets.QVBoxLayout()
-        root.setContentsMargins(14, 14, 14, 14)
-        root.addWidget(self.container)
-        wrapper = QtWidgets.QWidget()
-        wrapper.setLayout(root)
-        self.setCentralWidget(wrapper)
-
-        v = QtWidgets.QVBoxLayout(self.container)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(0)
-
-        self.titlebar = TitleBar(self, "BOT [GTA5RP]")
-        self.titlebar.setStyleSheet(f"""
-            TitleBar {{
-                background-color: rgba(255,255,255,0.03);
-                border-bottom: 1px solid {COLORS["border"]};
-                border-top-left-radius: 16px;
-                border-top-right-radius: 16px;
-            }}
-            QLabel {{
-                color: {COLORS["text"]};
-            }}
-            QPushButton[titleButton="true"] {{
-                color: {COLORS["muted"]};
-                background: transparent;
-                border: 1px solid rgba(255,255,255,0.06);
-                border-radius: 6px;
-                font-size: 13px;
-            }}
-            QPushButton[titleButton="true"]:hover {{
-                background: rgba(255,255,255,0.06);
-                color: {COLORS["text"]};
-            }}
-            QPushButton[closeButton="true"]:hover {{
-                background: {COLORS["danger"]};
-                color: white;
-                border-color: {COLORS["danger"]};
             }}
         """)
-        v.addWidget(self.titlebar)
 
-        content = QtWidgets.QWidget()
-        content_lay = QtWidgets.QVBoxLayout(content)
-        content_lay.setContentsMargins(16, 16, 16, 16)
-        content_lay.setSpacing(5)
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(30)
+        shadow.setOffset(0, 10)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 160))
+        self.container.setGraphicsEffect(shadow)
 
-        self.grid_widget = QtWidgets.QWidget()
-        self.grid_layout = QtWidgets.QGridLayout(self.grid_widget)
-        self.grid_layout.setContentsMargins(0, 0, 0, 15)
-        self.grid_layout.setHorizontalSpacing(14)
-        self.grid_layout.setVerticalSpacing(14)
+        root_layout = QtWidgets.QVBoxLayout()
+        root_layout.setContentsMargins(14, 14, 14, 14)
+        root_layout.addWidget(self.container)
+        
+        wrapper = QtWidgets.QWidget()
+        wrapper.setLayout(root_layout)
+        self.setCentralWidget(wrapper)
 
-        self.max_columns = 3
+        main_layout = QtWidgets.QVBoxLayout(self.container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
+        main_layout.addWidget(TitleBar())
+
+        content_widget = QtWidgets.QWidget()
+        content_layout = QtWidgets.QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(10)
+        
         self.stack = QtWidgets.QStackedWidget()
         self.stack.setObjectName("stack")
-        self.stack.setStyleSheet("""
-            QStackedWidget#stack {
+        self.stack.setStyleSheet(f"""
+            QStackedWidget#stack {{
                 background-color: rgba(26, 26, 30, 180);
-                border: 1px solid %s;
+                border: 1px solid {COLORS["border"]};
                 border-radius: 14px;
-            }
-        """ % COLORS["border"])
+            }}
+        """)
 
         self._buttons = []
-        self._indicators = []
-        self._pages = []
-
-        modules = self._prepare_modules()
-
-        row = col = 0
+        self._page_map = {}
         self._module_states = {}
+
+        grid_widget = self._create_module_grid()
+        
+        content_layout.addWidget(grid_widget)
+        content_layout.addWidget(self.stack, 1)
+        main_layout.addWidget(content_widget, 1)
+
+        if self._buttons:
+            modules = self._get_modules()
+            first_button = self._buttons[0]
+            first_page_cls = modules[0][2]
+            self.on_module_clicked(first_button, first_page_cls)
+
+        self._start_update_check()
+
+    def _create_module_grid(self):
+        grid_widget = QtWidgets.QWidget()
+        grid_layout = QtWidgets.QGridLayout(grid_widget)
+        grid_layout.setContentsMargins(0, 0, 0, 15)
+        grid_layout.setSpacing(14)
+
+        modules = self._get_modules()
+        max_columns = 3
 
         for i, (title, emoji, page_cls, enabled) in enumerate(modules):
             if not enabled:
                 continue
 
-            ind = StatusPulseDot(QtGui.QColor(COLORS["accent"]))
+            indicator = StatusPulseDot(QtGui.QColor(COLORS["accent"]))
+            button = ModuleButton(title, emoji, indicator)
+            button.clicked.connect(partial(self.on_module_clicked, button, page_cls))
+            
+            row, col = divmod(i, max_columns)
+            grid_layout.addWidget(button, row, col)
 
-            btn = ModuleButton(title, emoji, ind)
-            btn.clicked.connect(lambda b=btn, pcls=page_cls: self.on_module_clicked(b, pcls))
-            self.grid_layout.addWidget(btn, row, col)
-
-            col += 1
-            if col >= self.max_columns:
-                col = 0
-                row += 1
-
-            self._buttons.append(btn)
-            self._indicators.append(ind)
-
-            if page_cls is IndexPage or title == "Главная":
-                page = page_cls(version=self.CURRENT_VERSION)
-            else:
-                page = page_cls()
-
-            page_index = len(self._pages)
-            self._pages.append(page)
-            self._module_states[page_index] = False
-
+            page = page_cls(version=self.CURRENT_VERSION) if page_cls is IndexPage else page_cls()
+            page_index = self.stack.addWidget(page)
+            
             if hasattr(page, 'statusChanged'):
                 page.statusChanged.connect(lambda status, idx=page_index: self._handle_status_change(idx, status))
-
-            self.stack.addWidget(page)
-
-        content_lay.addWidget(self.grid_widget)
-        content_lay.addWidget(self.stack, 1)
-        v.addWidget(content, 1)
-
-        if self._buttons:
-            self.on_module_clicked(self._buttons[0], modules[0][2])
             
-        self.check_for_updates()
+            self._buttons.append(button)
+            self._page_map[page_cls] = page
+            self._module_states[page_index] = False
+        
+        return grid_widget
+
+    def _get_modules(self):
+        return [
+            ("Главная", "📇", IndexPage, True),
+            ("Деморган", "⛓️", DemorganPage, True),
+            ("Стройка\nШахта", "🚧", StroykaPage, True),
+            ("Порт", "🚢", PortPage, True),
+            ("Коровы", "🐄", CowPage, True),
+            ("Качалка", "🏋️", GymPage, True),
+            ("Кулинария", "🍜", GotovkaPage, True),
+            ("Анти-АФК", "🎯", AntiAfkPage, True),
+        ]
 
     def _handle_status_change(self, page_index: int, status: bool):
         self._module_states[page_index] = status
-        
         if 0 <= page_index < len(self._buttons):
-            button = self._buttons[page_index]
-            button.setModuleActive(status)
+            self._buttons[page_index].setModuleActive(status)
 
-    def on_module_clicked(self, btn: ModuleButton, page_cls):
-        for i, b in enumerate(self._buttons):
-            b.setActive(False)
+    def on_module_clicked(self, clicked_btn: ModuleButton, page_cls):
+        for btn in self._buttons:
+            btn.setActive(btn is clicked_btn)
         
-        btn.setActive(True)
+        if page_cls in self._page_map:
+            self.stack.setCurrentWidget(self._page_map[page_cls])
 
-        for i, page in enumerate(self._pages):
-            if isinstance(page, page_cls):
-                self.stack.setCurrentIndex(i)
-                break
+    def _start_update_check(self):
+        self.thread = QtCore.QThread(self)
+        self.checker = UpdateChecker(self.CURRENT_VERSION)
+        self.checker.moveToThread(self.thread)
 
-    def _prepare_modules(self):
-        data = {
-            "Главная": [
-                ("Главная", "📇", IndexPage, True),
-                ("Швейка", "👕", ShveikaPage, True),
-                ("Токарь", "⚙️", TokarPage, True),
-                ("Стройка\nШахта", "🚧", StroykaPage, True),
-                ("Порт", "🚢", PortPage, True),
-                ("Коровы", "🐄", CowPage, True),
-                ("Качалка", "🏋️", GymPage, True),
-                ("Кулинария", "🍜", GotovkaPage, True),
-                ("Анти-АФК", "🎯", AntiAfkPage, True),
-            ],
-        }
-        flat = []
-        for _, items in data.items():
-            for item in items:
-                flat.append(item)
-        return flat
+        self.thread.started.connect(self.checker.check)
+        self.checker.update_available.connect(self._handle_update)
+        self.checker.finished.connect(self.thread.quit)
 
-    def on_module_clicked(self, btn: ModuleButton, page_cls):
-        for b in self._buttons:
-            b.setActive(b is btn)
+        self.thread.finished.connect(self.checker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
 
-        for i in range(self.stack.count()):
-            if isinstance(self.stack.widget(i), page_cls):
-                self.stack.setCurrentIndex(i)
-                break
-                
-    def check_for_updates(self):
-        try:
-            version_url = "https://raw.githubusercontent.com/DornodeXXX/bot-gta/main/version.txt"
-            with urllib.request.urlopen(version_url, timeout=5) as response:
-                latest_version = response.read().decode('utf-8').strip()
-                
-                if latest_version > self.CURRENT_VERSION:
-                    reply = QtWidgets.QMessageBox.question(
-                        self,
-                        "Обновление доступно",
-                        f"Доступна новая версия {latest_version}!\nТекущая версия: {self.CURRENT_VERSION}\nХотите скачать?",
-                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-                    )
-                    if reply == QtWidgets.QMessageBox.Yes:
-                        github_url = "https://github.com/DornodeXXX/bot-gta/releases"
-                        webbrowser.open(github_url)
-        except urllib.error.URLError as e:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Ошибка",
-                f"Не удалось проверить обновления: {str(e)}"
-            )
+        self.thread.start()
+
+    @QtCore.pyqtSlot(str)
+    def _handle_update(self, latest_version_str):
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Обновление доступно",
+            f"Доступна новая версия {latest_version_str}!\n"
+            f"Текущая версия: {self.CURRENT_VERSION}\nХотите скачать?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            github_url = "https://github.com/DornodeXXX/bot-gta/releases"
+            webbrowser.open(github_url)
+            
+        self.thread.quit()
+        self.thread.wait()

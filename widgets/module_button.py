@@ -1,6 +1,6 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-from widgets.styles import COLORS
-from widgets.status_dot import StatusPulseDot
+from .theme import COLORS
+from .status_dot import StatusPulseDot
 
 class ModuleButton(QtWidgets.QFrame):
     clicked = QtCore.pyqtSignal()

@@ -4,15 +4,18 @@ import os
 import pyautogui
 from pyautogui import ImageNotFoundException
 import pygetwindow as gw
-from typing import Optional, Union, Callable, Any
+from typing import Optional, Union, Callable, Any, Dict, List
 from PyQt5.QtCore import pyqtSignal
 from PyQt5 import QtWidgets, QtCore
+from PyQt5.QtWidgets import QTextEdit
 import keyboard
+import json
+import types
+import cv2
 
 class CommonLogger:
     @staticmethod
-    def log(message: str,log_signal: Optional[Union[pyqtSignal, Callable]] = None, 
-           log_file: str = "logs.txt") -> str:
+    def log(message: str,log_target: Optional[Union[pyqtSignal, Callable, QTextEdit]] = None,log_file: str = "logs.txt") -> str:
         timestamp = time.strftime("[%H:%M:%S]")
         full_message = f"{timestamp} {message}"
         
@@ -21,13 +24,15 @@ class CommonLogger:
                 fp.write(full_message + "\n")
         except OSError:
             pass
-            
-        if log_signal:
-            if hasattr(log_signal, 'emit'):
-                log_signal.emit(full_message)
-            else:
-                log_signal(full_message)
-                
+
+        if log_target:
+            if hasattr(log_target, 'emit'): 
+                log_target.emit(message)
+            elif isinstance(log_target, QTextEdit):
+                log_target.append(full_message)
+            elif callable(log_target):
+                log_target(full_message)
+        
         return full_message
 
     @staticmethod
@@ -38,16 +43,6 @@ class CommonLogger:
             return None
         except Exception as e:
             CommonLogger.log(f"[Ошибка] locate {os.path.basename(path)}: {traceback.format_exc()}",log_signal)
-            return None
-
-    @staticmethod
-    def safe_locate_center(path: str, confidence: float = 0.95,log_signal: Optional[Union[pyqtSignal, Callable]] = None) -> Any:
-        try:
-            return pyautogui.locateCenterOnScreen(path, confidence=confidence)
-        except ImageNotFoundException:
-            return None
-        except Exception as e:
-            CommonLogger.log(f"[Ошибка] locate_center {os.path.basename(path)}: {traceback.format_exc()}",log_signal)
             return None
 
     @staticmethod
@@ -62,13 +57,6 @@ class CommonLogger:
         }
         normalized = "".join(replacements.get(ch, ch) for ch in active.title.casefold())
         return "multi" in normalized
-
-    @staticmethod
-    def check_file_exists(file_path: str,log_signal: Optional[Union[pyqtSignal, Callable]] = None) -> bool:
-        exists = os.path.exists(file_path)
-        if not exists and log_signal:
-            CommonLogger.log(f"[Ошибка] Файл не найден: {file_path}", log_signal)
-        return exists
         
     @staticmethod
     def _make_label(text: str, size: int) -> QtWidgets.QLabel:
@@ -146,15 +134,20 @@ class CommonLogger:
         
 class ScriptController:
     @staticmethod
-    def toggle_script(widget, worker_factory, log_output, extra_signals=None, status_signal=None,
-                      worker_args=None, worker_kwargs=None):
+    def toggle_script(widget, worker_factory, log_output, extra_signals=None, status_signal=None, worker_args=None, worker_kwargs=None):
         checked = widget.switch.isChecked()
         if checked:
             log_output.clear()
             worker_args = worker_args or ()
             worker_kwargs = worker_kwargs or {}
             widget.worker = worker_factory(*worker_args, **worker_kwargs)
-            widget.worker.log_signal.connect(lambda text: ScriptController.append_log(log_output, text))
+
+            def stop(self):
+                self.running = False
+                if hasattr(self, "_stop"):
+                    self._stop.set()
+            widget.worker.stop = types.MethodType(stop, widget.worker)
+            widget.worker.log_signal.connect(lambda text: CommonLogger.log(text, log_output))
 
             if extra_signals:
                 for signal_name, slot in extra_signals.items():
@@ -162,7 +155,7 @@ class ScriptController:
                     if signal:
                         signal.connect(slot)
 
-            widget.worker.finished.connect(lambda: ScriptController.on_worker_finished(widget, log_output))
+            widget.worker.finished.connect(lambda: CommonLogger.log("[■] Скрипт остановлен.", log_output))
             widget.worker.start()
         else:
             if widget.worker:
@@ -170,15 +163,6 @@ class ScriptController:
 
         if status_signal:
             status_signal.emit(checked)
-
-    @staticmethod
-    def on_worker_finished(widget, log_output):
-        ScriptController.append_log(log_output, "[■] Скрипт остановлен.")
-        widget.worker = None
-
-    @staticmethod
-    def append_log(log_output, text):
-        log_output.append(text)
 
 class HotkeyManager:
     def __init__(self, hotkey: str, toggle_callback: Callable, log_signal=None):
@@ -199,8 +183,7 @@ class HotkeyManager:
         try:
             self._hotkey_id = keyboard.add_hotkey(self.hotkey, self.toggle)
         except Exception as exc:
-            CommonLogger.log(f"Не удалось зарегистрировать горячую клавишу '{self.hotkey}': {exc}",
-                             self.log_signal)
+            CommonLogger.log(f"Не удалось зарегистрировать горячую клавишу '{self.hotkey}': {exc}",self.log_signal)
 
     def unregister(self):
         if self._hotkey_id is not None:
@@ -209,3 +192,97 @@ class HotkeyManager:
             except Exception:
                 pass
             self._hotkey_id = None
+
+class SettingsManager:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(SettingsManager, cls).__new__(cls)
+            cls._instance.filename = "settings.json"
+            cls._instance.settings = {}
+            cls._instance.load()
+        return cls._instance
+
+    def load(self):
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, "r", encoding="utf-8") as f:
+                    self.settings = json.load(f)
+            except Exception:
+                self.settings = {}
+        else:
+            self.settings = {}
+
+    def save(self):
+        with open(self.filename, "w", encoding="utf-8") as f:
+            json.dump(self.settings, f, ensure_ascii=False, indent=4)
+
+    def get(self, section: str, key: str, default=None):
+        return self.settings.get(section, {}).get(key, default)
+
+    def set(self, section: str, key: str, value):
+        if section not in self.settings:
+            self.settings[section] = {}
+        self.settings[section][key] = value
+        self.save()
+
+    def save_group(self, section: str, values: dict):
+        if section not in self.settings:
+            self.settings[section] = {}
+        self.settings[section].update(values)
+        self.save()
+
+def auto_detect_region(width_ratio=None, height_ratio=None, top_ratio=None, reference_height=None, reference_top=None):
+    screen_width, screen_height = pyautogui.size()
+
+    if width_ratio is None:
+        width_ratio = 0.5
+    if height_ratio is None:
+        height_ratio = 0.7
+    if top_ratio is None:
+        top_ratio = 0.25
+
+    if reference_height is not None and reference_top is not None:
+        top_ratio = reference_top / reference_height
+
+    region_width = int(screen_width * width_ratio)
+    region_height = int(screen_height * height_ratio)
+
+    region = {
+        "left": int((screen_width - region_width) / 2),
+        "top": int(screen_height * top_ratio),
+        "width": region_width,
+        "height": region_height,
+    }
+    return region
+
+def load_images(folder: str, mapping: Dict[str, str] = None, count: int = None, as_cv2: bool = False) -> Union[Dict[str, str], Dict[str, 'np.ndarray'], List[str]]:
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    folder_path = os.path.join(base, "assets", folder)
+
+    if mapping:
+        if as_cv2:
+            result = {}
+            for filename, key in mapping.items():
+                img = cv2.imread(os.path.join(folder_path, filename), cv2.IMREAD_UNCHANGED)
+                if img is None:
+                    raise FileNotFoundError(f"Файл {filename} не найден")
+                result[key] = img[:, :, :3]
+            return result
+        else:
+            return {os.path.join(folder_path, filename): value for filename, value in mapping.items()}
+
+    if count:
+        if as_cv2:
+            result = []
+            for i in range(1, count + 1):
+                img = cv2.imread(os.path.join(folder_path, f"{i}.png"), cv2.IMREAD_UNCHANGED)
+                if img is None:
+                    raise FileNotFoundError(f"Файл {i}.png не найден")
+                result.append(img[:, :, :3])
+            return result
+        else:
+            return [os.path.join(folder_path, f"{i}.png") for i in range(1, count + 1)]
+
+    raise ValueError("mapping count")

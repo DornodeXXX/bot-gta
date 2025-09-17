@@ -1,7 +1,6 @@
 from PyQt5 import QtGui
-
 COLORS = {
-    "bg": "#0E1116",
+    "bg": "#160E0E",
     "surface": "#151A21",
     "surface_hover": "#1A212B",
     "surface_press": "#10161C",

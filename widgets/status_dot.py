@@ -1,5 +1,5 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-from widgets.styles import COLORS
+from .theme import COLORS
 
 class StatusPulseDot(QtWidgets.QWidget):
     def __init__(self, color=QtGui.QColor(COLORS["accent"])):
