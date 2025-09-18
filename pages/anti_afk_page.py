@@ -9,44 +9,14 @@ from typing import Optional, Tuple, Callable
 import time
 from widgets.common import CommonLogger, ScriptController, SettingsManager
 from widgets.switch_button import SwitchButton
+import vgamepad as vg
 
 BASE_ASSETS_PATH = "assets/spin/"
 
 class AntiAfkPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
-    def _init_gamepad(self, retries=2, delay=1.0):
-        try:
-            import vgamepad as vg
-        except Exception:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Ошибка",
-                "Библиотека vgamepad не найдена.\nУстановите её: pip install vgamepad"
-            )
-            sys.exit(1)
-
-        last_exception = None
-        for attempt in range(retries):
-            try:
-                gamepad = vg.VX360Gamepad()
-                gamepad.reset()
-                gamepad.update()
-                QtCore.QThread.msleep(int(delay * 1000))
-                return gamepad
-            except Exception as e:
-                last_exception = e
-                QtCore.QThread.msleep(int(delay * 1000))
-
-        QtWidgets.QMessageBox.critical(
-            self,
-            "Ошибка",
-            f"Не удалось инициализировать виртуальный геймпад.\n\n{last_exception}"
-        )
-        sys.exit(1)
-
     def __init__(self):
         super().__init__()
-        self.gamepad = self._init_gamepad()
         self.worker = None
         self.settings = SettingsManager()
         self._init_ui()
@@ -141,23 +111,26 @@ class AntiAfkPage(QtWidgets.QWidget):
 
     def handle_toggle(self):
         self._save_settings()
-        ScriptController.toggle_script(widget=self,
-            worker_factory=lambda: AntiAfkWorker(
+        def worker_factory():
+            worker = AntiAfkWorker(
                 self.min_delay_slider.value() / 10.0,
                 self.max_delay_slider.value() / 10.0,
                 self.min_pause_slider.value() / 10.0,
                 self.max_pause_slider.value() / 10.0,
                 self.checkwheel.isChecked(),
-                self.gamepad
-            ),
+            )
+            return worker
+
+        ScriptController.toggle_script(
+            widget=self,
+            worker_factory=worker_factory,
             log_output=self.log_output,
             status_signal=self.statusChanged
         )
-
 class AntiAfkWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
 
-    def __init__(self, min_delay=1.0, max_delay=3.5, min_pause=0.5, max_pause=2.0, checkwheel=False, gamepad=False):
+    def __init__(self, min_delay=1.0, max_delay=3.5, min_pause=0.5, max_pause=2.0, checkwheel=False):
         super().__init__()
         self.running = True
         self.min_delay = min_delay
@@ -165,7 +138,11 @@ class AntiAfkWorker(QtCore.QThread):
         self.min_pause = min_pause
         self.max_pause = max_pause
         self.checkwheel = checkwheel
-        self.gamepad = gamepad
+        self.gamepad = vg.VX360Gamepad()
+        print("Создан gamepad с PID:", self.gamepad.get_pid())
+        print("Создан gamepad с VID:", self.gamepad.get_vid())
+        self.gamepad.reset()
+        self.gamepad.update()
         self._stop = threading.Event()
         self.confidence = 0.85
         self.last_roulette_spin_time = time.time()
@@ -184,6 +161,16 @@ class AntiAfkWorker(QtCore.QThread):
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
+
+    def close(self):
+        """Отключение виртуального геймпада"""
+        if self.gamepad:
+            try:
+                self.gamepad.reset()
+                self.gamepad.update()
+            except Exception:
+                pass
+            self.gamepad = None
 
     def click_image_in_region(self,image_filename: str,region: Optional[Tuple[int, int, int, int]] = None,confidence: float = 0.85,click: Optional[Callable[[int, int], None]] = pyautogui.click) -> bool:
         full_image_path = os.path.join(BASE_ASSETS_PATH, image_filename)
@@ -250,6 +237,8 @@ class AntiAfkWorker(QtCore.QThread):
     def run(self):
         self.log("[→] Скрипт анти-АФК запущен.")
         try:
+            self.gamepad.reset()
+            self.gamepad.update()
             while self.running and not self._stop.is_set():
                 direction = random.choice(list(self.DIRECTIONS.keys()))
                 hold_time = random.uniform(self.min_delay, self.max_delay)
@@ -278,5 +267,9 @@ class AntiAfkWorker(QtCore.QThread):
         except Exception as e:
             self.log(f"[Ошибка] {e}")
         finally:
-            self.gamepad.left_joystick(x_value=0, y_value=0)
-            self.gamepad.update()
+            try:
+                self.gamepad.left_joystick(x_value=0, y_value=0)
+                self.gamepad.update()
+            except Exception:
+                pass
+            self.close()
