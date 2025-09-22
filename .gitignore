@@ -6,3 +6,5 @@ build_temp
 ViGEmBus_1.22.0_x64_x86_arm64.exe
 compil.bat
 settings.json
+config.json
+ViGEmClient.dll
