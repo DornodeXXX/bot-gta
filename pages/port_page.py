@@ -1,11 +1,9 @@
 from PyQt5 import QtWidgets, QtCore
 from widgets.switch_button import SwitchButton
-import time
 import keyboard
-import pygetwindow as gw
 import pyautogui
+from pynput.keyboard import Controller
 from widgets.common import CommonLogger, ScriptController, SettingsManager, auto_detect_region
-import numpy as np
 import threading
 
 class PortPage(QtWidgets.QWidget):
@@ -85,6 +83,7 @@ class PortWorker(QtCore.QThread):
         self.hotkey = hotkey or "f5"
         self.monitor = auto_detect_region()
         self._stop = threading.Event()
+        self.keyboard_controller = Controller()
 
         keyboard.add_hotkey(self.hotkey, self._request_toggle_move)
 
@@ -161,7 +160,8 @@ class PortWorker(QtCore.QThread):
                     self._count += 1
                     self.log(f"[✓] Найдена мини-игра — нажимаем E (#{self._count})")
                     self.counter_signal.emit(self._count)
-                    keyboard.press_and_release("e")
+                    self.keyboard_controller.tap('e')
+                    self.keyboard_controller.tap('у')
                     self._stop.wait(0.5)
 
                 self._stop.wait(self.SEARCH_DELAY)

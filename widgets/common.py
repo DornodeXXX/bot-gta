@@ -75,24 +75,28 @@ class CommonLogger:
         return log_field
     
     @staticmethod
-    def create_slider_row(title: str, minimum: int, maximum: int, default: int, suffix: str = "сек", step: float = 0.1):
+    def create_slider_row(title: str, minimum: int, maximum: int, default: float, suffix: str = "сек", step: float = 0.1):
         layout = QtWidgets.QHBoxLayout()
         layout.setSpacing(5)
+
+        factor = int(1 / step)
 
         label = QtWidgets.QLabel(title)
         label.setStyleSheet("color: white;")
         
         slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        slider.setMinimum(minimum)
-        slider.setMaximum(maximum)
-        slider.setValue(default)
+        slider.setMinimum(int(minimum * factor))
+        slider.setMaximum(int(maximum * factor))
+        slider.setValue(int(default * factor)) 
+        
         slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         
-        value_label = QtWidgets.QLabel(f"{default * step:.1f} {suffix}")
+        value_label = QtWidgets.QLabel(f"{default:.2f} {suffix}")
         value_label.setStyleSheet("color: white;")
         
         def update_label(val):
-            value_label.setText(f"{val * step:.1f} {suffix}")
+            value_label.setText(f"{val / factor:.2f} {suffix}")
+            
         slider.valueChanged.connect(update_label)
 
         layout.addWidget(label)
@@ -100,7 +104,7 @@ class CommonLogger:
         layout.addWidget(value_label)
 
         return layout, slider, value_label
-    
+
     @staticmethod
     def create_hotkey_input(default: str = "f5", description: str = "— вкл/выкл автонажатие E"):
         layout = QtWidgets.QHBoxLayout()

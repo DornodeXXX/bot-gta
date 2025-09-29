@@ -5,6 +5,7 @@ import keyboard
 import pyautogui
 import cv2
 import numpy as np
+from pynput.keyboard import Key, Controller
 import mss
 from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region
 
@@ -86,6 +87,7 @@ class GymWorker(QtCore.QThread):
         self._hotkey_id = None
         self._auto_e_enabled = False
         self._last_e_time = 0.0
+        self.keyboard_controller = Controller()
         self.hotkey_manager = HotkeyManager(
             hotkey=hotkey,
             toggle_callback=self._on_toggle_auto_e,
@@ -145,12 +147,13 @@ class GymWorker(QtCore.QThread):
 
                     if found and not was_found:
                         self.log(f"Круг найден, нажимаем пробел")
-                        keyboard.press_and_release('space')
+                        self.keyboard_controller.tap(Key.space)
 
                     if not found and self._auto_e_enabled:
                         now = time.time()
                         if now - self._last_e_time >= 5.0:
-                            keyboard.press_and_release('e')
+                            self.keyboard_controller.tap('e')
+                            self.keyboard_controller.tap('у')
                             self._last_e_time = now
                             self.log("Нажата 'E' (авто)")
 

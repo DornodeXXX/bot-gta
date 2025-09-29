@@ -56,20 +56,29 @@ class StroykaWorker(QtCore.QThread):
         self.running = False
         self.count = 0
         self.img_key = load_images("stroyka", mapping={
-            "image1.png": "e",
-            "image2.png": "y",
-            "image3.png": "f",
-            "image4.png": "h",
+            "image1.png": {"en": "e", "ru": "у"},
+            "image2.png": {"en": "y", "ru": "н"},
+            "image3.png": {"en": "f", "ru": "а"},
+            "image4.png": {"en": "h", "ru": "р"},
         })
         self._shown = {p: False for p in self.img_key}
         self._visible = {p: False for p in self.img_key}
         self._stop = threading.Event()
+        self.keyboard_controller = Controller()
+        self.last_detection_time = 0
+        self.detection_cache = {}
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
 
     def safe_locate(self, path: str):
-        return CommonLogger.safe_locate(path, self.CONFIDENCE, self.log_signal)
+        current_time = time.time()
+        if path in self.detection_cache and current_time - self.detection_cache[path]['time'] < 0.1:
+            return self.detection_cache[path]['result']
+        
+        result = CommonLogger.safe_locate(path, self.CONFIDENCE, self.log_signal)
+        self.detection_cache[path] = {'result': result, 'time': current_time}
+        return result
 
     def run(self):
         self.running = True
@@ -77,40 +86,45 @@ class StroykaWorker(QtCore.QThread):
 
         try:
             while self.running:
+                start_time = time.time()
                 self._process_images()
-                self._stop.wait(0.1)
+                
+                process_time = time.time() - start_time
+                if process_time < 0.02:
+                    time.sleep(0.01)
         except Exception as e:
             self.log(f"[Критическая ошибка]\n{str(e)}")
         finally:
             self.running = False
 
     def _process_images(self):
-        for path, key in self.img_key.items():
-            name = os.path.basename(path)
-
+        for path, keys in self.img_key.items():
             if self.safe_locate(path):
-                self._handle_visible_image(path, key, name)
-            else:
-                self._handle_missing_image(path, name)
+                self._handle_visible_image(path, keys)
+                break
 
-    def _handle_visible_image(self, path: str, key: str, name: str):
+    def _handle_visible_image(self, path: str, keys: dict):
         if not self._visible[path]:
             self._visible[path] = True
             self._shown[path] = False
             self.count += 1
             self.counter_signal.emit(self.count)
-            self.log(f"[✓] Найдено → спам '{key}'")
+            self.log(f"[✓] Найдено → спам '{keys['en']}' и '{keys['ru']}'")
 
-        while self.running and self.safe_locate(path):
-            keyboard_controller = Controller()
-            keyboard_controller.press(key)
-            self._stop.wait(0.01)
-            keyboard_controller.release(key)
-            self._stop.wait(0.03)
+        press_count = 0
+        max_presses = 45 
+        
+        while self.running and press_count < max_presses:
+            self.keyboard_controller.tap(keys['en'])
+            self.keyboard_controller.tap(keys['ru'])
+            
+            press_count += 1
+            time.sleep(0.00002)
 
-        self._visible[path] = False
+        if not self.safe_locate(path):
+            self._visible[path] = False
 
-    def _handle_missing_image(self, path: str, name: str):
+    def _handle_missing_image(self, path: str):
         self._visible[path] = False
         if not self._shown[path]:
             self._shown[path] = True

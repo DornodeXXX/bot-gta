@@ -67,20 +67,20 @@ class AntiAfkPage(QtWidgets.QWidget):
 
         settings_layout.addWidget(CommonLogger._make_label("Время зажатия:", 17))
         min_delay_row, self.min_delay_slider, self.min_label = CommonLogger.create_slider_row(
-            "Мин. зажатие:", minimum=5, maximum=100, default=10, step=0.1
+            "Мин. зажатие:", minimum=0.5, maximum=10, default=0.5, step=0.1
         )
         max_delay_row, self.max_delay_slider, self.max_label = CommonLogger.create_slider_row(
-            "Макс. зажатие:", minimum=5, maximum=100, default=35, step=0.1
+            "Макс. зажатие:", minimum=0.5, maximum=10, default=2.5, step=0.1
         )
         settings_layout.addLayout(min_delay_row)
         settings_layout.addLayout(max_delay_row)
 
         settings_layout.addWidget(CommonLogger._make_label("Пауза между движениями:", 17))
         min_pause_row, self.min_pause_slider, self.min_pause_label = CommonLogger.create_slider_row(
-            "Мин. пауза:", minimum=5, maximum=100, default=5, step=0.1
+            "Мин. пауза:", minimum=0.5, maximum=10, default=8, step=0.1
         )
         max_pause_row, self.max_pause_slider, self.max_pause_label = CommonLogger.create_slider_row(
-            "Макс. пауза:", minimum=5, maximum=100, default=20, step=0.1
+            "Макс. пауза:", minimum=0.5, maximum=10, default=10, step=0.1
         )
         settings_layout.addLayout(min_pause_row)
         settings_layout.addLayout(max_pause_row)
@@ -94,10 +94,10 @@ class AntiAfkPage(QtWidgets.QWidget):
         self.setLayout(layout)
 
     def _load_settings(self):
-        self.min_delay_slider.setValue(self.settings.get("anti_afk", "min_delay", 10))
-        self.max_delay_slider.setValue(self.settings.get("anti_afk", "max_delay", 35))
-        self.min_pause_slider.setValue(self.settings.get("anti_afk", "min_pause", 5))
-        self.max_pause_slider.setValue(self.settings.get("anti_afk", "max_pause", 20))
+        self.min_delay_slider.setValue(self.settings.get("anti_afk", "min_delay", 5))
+        self.max_delay_slider.setValue(self.settings.get("anti_afk", "max_delay", 25))
+        self.min_pause_slider.setValue(self.settings.get("anti_afk", "min_pause", 80))
+        self.max_pause_slider.setValue(self.settings.get("anti_afk", "max_pause", 100))
         self.checkwheel.setChecked(self.settings.get("anti_afk", "auto_wheel", False))
 
     def _save_settings(self):
@@ -163,7 +163,6 @@ class AntiAfkWorker(QtCore.QThread):
         CommonLogger.log(message, self.log_signal)
 
     def close(self):
-        """Отключение виртуального геймпада"""
         if self.gamepad:
             try:
                 self.gamepad.reset()

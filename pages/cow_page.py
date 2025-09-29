@@ -2,11 +2,11 @@ from PyQt5 import QtWidgets, QtCore
 from widgets.switch_button import SwitchButton
 import time
 import keyboard
-import pyautogui
-from pynput.keyboard import Controller, Key
 import cv2
 import numpy as np
 import mss
+import os
+from pynput.keyboard import Controller
 from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region, load_images
 import threading
 
@@ -46,7 +46,7 @@ class CowPage(QtWidgets.QWidget):
         settings_layout.setContentsMargins(10, 10, 10, 10)
 
         pause_layout, self.pause_slider, self.min_label = CommonLogger.create_slider_row(
-            "Время паузы:", minimum=0, maximum=100, default=1, suffix="сек", step=0.1
+            "Время паузы:", minimum=0.07, maximum=5, default=0.07, suffix="сек", step=0.01
         )
 
         settings_group.setStyleSheet("background: none;")
@@ -85,25 +85,28 @@ class CowPage(QtWidgets.QWidget):
     def _update_counter(self, value: int):
         self.counter_label.setText(f"Счётчик: {value}")
 
-
 class CowWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     counter_signal = QtCore.pyqtSignal(int)
 
-    def __init__(self, pause_delay=0 ,hotkey: str = 'f5'):
+    def __init__(self, pause_delay=0, hotkey: str = 'f5'):
         super().__init__()
         self.running = True
         self._count = 0
+        try:
+            cv2.setUseOptimized(True)
+            cv2.setNumThreads(max(1, os.cpu_count() - 1))
+        except Exception:
+            pass
         self.templates = load_images("cow", mapping={"1.png": "1", "2.png": "2"}, as_cv2=True)
         self.monitor = auto_detect_region(width_ratio=1.0, height_ratio=0.65, top_ratio=0.35)
-        self._move_enabled = False
-        self._toggle_requested = False
-        self.pause_delay = pause_delay
+        self.pause_delay = 0.04
         self._stop = threading.Event()
-        self._hotkey = (hotkey or 'f5').lower().strip()
-        self._hotkey_id = None
         self._auto_e_enabled = False
-        self._last_e_time = 0.0
+        self.min_press_interval = 0
+        self._last_press_time = 0.0
+        self.ui_update_every = 5
+        self.keyboard_controller = Controller()
         self.hotkey_manager = HotkeyManager(
             hotkey=hotkey,
             toggle_callback=self._on_toggle_auto_e,
@@ -115,7 +118,10 @@ class CowWorker(QtCore.QThread):
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
-        
+
+    def _tap(self, key: str):
+        keyboard.press_and_release(key)
+
     def run(self):
         self.hotkey_manager.register()
         with mss.mss() as sct:
@@ -128,42 +134,35 @@ class CowWorker(QtCore.QThread):
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
                     scores = {}
-                    locations = {}
-
                     for key, template in self.templates.items():
                         res = cv2.matchTemplate(frame_rgb, template, cv2.TM_CCOEFF_NORMED)
-                        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                        _, max_val, _, _ = cv2.minMaxLoc(res)
                         if max_val >= 0.91:
-                            h, w = template.shape[:2]
-                            roi = frame_rgb[max_loc[1]:max_loc[1]+h, max_loc[0]:max_loc[0]+w]
-                            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                            brightness = np.mean(gray)
-                            scores[key] = brightness
-                            locations[key] = max_val
+                            scores[key] = max_val
 
                     found = bool(scores)
-                    
-                    if "1" in scores and "2" in scores:
-                        brighter = max(scores, key=scores.get)
-                        if brighter == "1":
-                            keyboard_controller = Controller()
-                            keyboard_controller.press("a")
-                            time.sleep(0.01)
-                            keyboard_controller.release("a")
-                            self._count += 1
-                            self.log(f"[✓] найдена → A (#{self._count})")
-                        else:
-                            keyboard.send("d")
-                            self._count += 1
-                            self.log(f"[✓] найдена → D (#{self._count})")
-                        self.counter_signal.emit(self._count)
-                        
-                    if not found and self._auto_e_enabled:
-                        keyboard.press_and_release('e')
-                        self.log("Нажата 'E' (авто)")
-                            
-                    if self._stop.wait(self.pause_delay):
-                        break
+
+                    if found:
+                        now = time.time()
+                        if now - self._last_press_time >= self.min_press_interval:
+                            if scores.get("1", -1) >= scores.get("2", -1):
+                                self.keyboard_controller.tap('a')
+                                self.keyboard_controller.tap('ф')
+                            else:
+                                self.keyboard_controller.tap('d')
+                                self.keyboard_controller.tap('в')
+
+                            self._last_press_time = now
+                            if self._count % self.ui_update_every == 0:
+                                self.counter_signal.emit(self._count)
+
+                    elif self._auto_e_enabled:
+                        self.keyboard_controller.tap('e')
+                        self.keyboard_controller.tap('у')
+
+                    if self.pause_delay > 0:
+                        if self._stop.wait(self.pause_delay):
+                            break
 
             except Exception as exc:
                 self.log(f"[Ошибка потока] {str(exc)}")

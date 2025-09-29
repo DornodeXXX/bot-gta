@@ -8,6 +8,8 @@ import mss
 from widgets.common import CommonLogger, ScriptController, auto_detect_region, load_images
 import os
 import threading
+import time, threading, sys
+import winsound
 
 class DemorganPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -49,10 +51,40 @@ class DemorganPage(QtWidgets.QWidget):
     def _update_counter(self, value: int):
         self.counter_label.setText(f"Счётчик: {value}")
 
+class TimerWorker(QtCore.QThread):
+    log_signal = QtCore.pyqtSignal(str)
+    finished_signal = QtCore.pyqtSignal()
+
+    def __init__(self, seconds: int, label: str):
+        super().__init__()
+        self.seconds = seconds
+        self.label = label
+        self.running = True
+
+    def run(self):
+        start = time.time()
+        while self.running and (time.time() - start) < self.seconds:
+            left = self.seconds - int(time.time() - start)
+            mins, secs = divmod(left, 60)
+            self.log_signal.emit(f"[⏳] Таймер: осталось {mins:02d}:{secs:02d}")
+            time.sleep(1)
+        if self.running:
+            self.log_signal.emit(f"[✔] {self.label} таймер завершён!")
+            winsound.Beep(1000, 200)
+            self.finished_signal.emit()
+
+    def stop(self):
+        self.running = False
+
 class DemorganWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     counter_signal = QtCore.pyqtSignal(int)
     CONFIDENCE = 0.95
+
+    def start_timer(self, seconds: int, label: str):
+        self.timer_thread = TimerWorker(seconds, label)
+        self.timer_thread.log_signal.connect(self.log)
+        self.timer_thread.start()
 
     def __init__(self, width_ratio=0.5, height_ratio=0.6, top_ratio=0.25):
         super().__init__()
@@ -88,29 +120,6 @@ class DemorganWorker(QtCore.QThread):
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
 
-    def _search_in_region(self, sct, region):
-        h, w = self.template.shape[:2]
-        screenshot = np.array(sct.grab(region))
-        screenshot_bgr = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
-
-        result = cv2.matchTemplate(screenshot_bgr, self.template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-        if max_val > 0.9:
-            found_x = region["left"] + max_loc[0] + w // 2
-            found_y_bottom = region["top"] + max_loc[1] + h
-            self.last_known_position = (found_x, found_y_bottom)
-            self.is_tokar_found = True
-            pyautogui.moveTo(found_x, found_y_bottom + 30)
-            self._count += 1
-            self.counter_signal.emit(self._count)
-            self.log(f"[✓] токарь найден (#{self._count})")
-            self._stop.wait(0.01)
-            self.is_tokar_found = False
-            return True
-
-        return False
-
     def run(self):
         self.log(f"[→] Скрипт Деморган запущен")
         tokar_thread = threading.Thread(target=self.run_tokar, args=(self.template, self.monitor))
@@ -119,38 +128,6 @@ class DemorganWorker(QtCore.QThread):
         script_thread.start()
         tokar_thread.join()
         script_thread.join()
-
-    def run_tokar(self, template, monitor):
-        h, w = template.shape[:2]
-        self.template = template
-        self.monitor = monitor
-        self.last_known_position = None
-
-        with mss.mss() as sct:
-            try:
-                while self.running:
-                    if self.last_known_position:
-                        cx, cy_bottom = self.last_known_position
-                        small_monitor = {
-                            "left": max(cx - 100, self.monitor["left"]),
-                            "top": max(cy_bottom - 100 - h // 2, self.monitor["top"]),
-                            "width": min(cx + 100, self.monitor["left"] + self.monitor["width"]) - max(cx - 100, self.monitor["left"]),
-                            "height": min(cy_bottom + 100 - h // 2, self.monitor["top"] + self.monitor["height"]) - max(cy_bottom - 100 - h // 2, self.monitor["top"]),
-                        }
-                        if self._search_in_region(sct, small_monitor):
-                            continue
-
-                    if not self._search_in_region(sct, self.monitor):
-                        self.last_known_position = None
-                        self._stop.wait(0.05)
-            except Exception as exc:
-                self.log(f"[Ошибка потока токаря] {str(exc)}")
-            finally:
-                self.running = False
-
-    def _grab_bgr(self, sct, region):
-        frame = np.array(sct.grab(region))
-        return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
     def _locate_one(self, image_bgr, templ_bgr, threshold):
         res = cv2.matchTemplate(image_bgr, templ_bgr, cv2.TM_CCOEFF_NORMED)
@@ -172,31 +149,28 @@ class DemorganWorker(QtCore.QThread):
     def run_shveika(self):
         last_wait_logged = 0.0
         sentinel_tem = self.shveika_templates[self.sentinel_idx]
-
-        idle_sleep = 0.12
-        busy_sleep = 0.03
-        wait_on_tokar = 0.05
-
         try:
             with mss.mss() as sct:
                 while self.running:
                     if self.is_tokar_found:
-                        self._stop.wait(wait_on_tokar)
+                        self._stop.wait(0.05)
                         continue
 
-                    image_bgr = self._grab_bgr(sct, self.monitor)
+                    frame = np.array(sct.grab(self.monitor))
+                    image_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
                     sentinel_center, sentinel_score = self._locate_one(image_bgr, sentinel_tem, self.sentinel_threshold)
 
                     if sentinel_center is None:
                         now = time.time()
                         if now - last_wait_logged > 1.5:
                             last_wait_logged = now
-                        self._stop.wait(idle_sleep)
+                        self._stop.wait(0.01)
                         continue
 
                     coords = self._locate_all_20(image_bgr, self.CONFIDENCE)
 
                     if all(coords):
+                        self.start_timer(65, "Швейка")
                         self._count += 1
                         self.counter_signal.emit(self._count)
                         self.log(f"[✓] Все 20 точек найдены. Начинаю клик.")
@@ -212,15 +186,79 @@ class DemorganWorker(QtCore.QThread):
                                 self._stop.wait(0.05)
                                 pyautogui.click(pos)
                                 self.log(f"[Клик] {i+1}/20: {pos} (2 раза)")
-                        self._stop.wait(busy_sleep)
+                        self._stop.wait(0.03)
                     else:
                         now = time.time()
                         if now - last_wait_logged > 1.5:
                             missing = [i+1 for i, c in enumerate(coords) if c is None]
                             self.log(f"[~] Ожидание элементов... отсутствуют: {missing[:6]}{'...' if len(missing) > 6 else ''}")
                             last_wait_logged = now
-                        self._stop.wait(busy_sleep)
+                        self._stop.wait(0.03)
         except Exception as exc:
-            self.log(f"[Ошибка потока скрипта] {str(exc)}")
+            self.log(f"[Ошибка потока Швейки] {str(exc)}")
         finally:
             self.running = False
+
+
+    def _search_in_region(self, sct, region):
+        h, w = self.template.shape[:2]
+        screenshot = np.array(sct.grab(region))
+        screenshot_bgr = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
+
+        result = cv2.matchTemplate(screenshot_bgr, self.template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+        if max_val > 0.9:
+            found_x = region["left"] + max_loc[0] + w // 2
+            found_y_bottom = region["top"] + max_loc[1] + h
+            self.last_known_position = (found_x, found_y_bottom)
+            self.is_tokar_found = True
+            pyautogui.moveTo(found_x, found_y_bottom + 30)
+            self.log(f"[✓] токарь найден (#{self._count})")
+            self._stop.wait(0.01)
+            self.is_tokar_found = False
+            return True
+
+        return False
+
+    def run_tokar(self, template, monitor):
+        h, w = template.shape[:2]
+        self.template = template
+        self.monitor = monitor
+        self.last_known_position = None
+        self.is_tracking = False
+
+        with mss.mss() as sct:
+            try:
+                while self.running:
+                    found = False
+
+                    if self.last_known_position:
+                        cx, cy_bottom = self.last_known_position
+                        small_monitor = {
+                            "left": max(cx - 100, self.monitor["left"]),
+                            "top": max(cy_bottom - 100 - h // 2, self.monitor["top"]),
+                            "width": min(cx + 100, self.monitor["left"] + self.monitor["width"]) - max(cx - 100, self.monitor["left"]),
+                            "height": min(cy_bottom + 100 - h // 2, self.monitor["top"] + self.monitor["height"]) - max(cy_bottom - 100 - h // 2, self.monitor["top"]),
+                        }
+                        found = self._search_in_region(sct, small_monitor)
+
+                    if not found:
+                        found = self._search_in_region(sct, self.monitor)
+
+                    if found and not self.is_tracking:
+                        print("Элемент найден. Работа начата!")
+                        self.start_timer(64, "Токарь")
+                        self.is_tracking = True
+
+                    if not found:
+                        self.last_known_position = None
+                        if self.is_tracking:
+                            print("Элемент потерян. Отслеживание остановлено.")
+                            self.is_tracking = False
+                        self._stop.wait(0.05)
+                            
+            except Exception as exc:
+                self.log(f"[Ошибка потока токаря] {str(exc)}")
+            finally:
+                self.running = False
