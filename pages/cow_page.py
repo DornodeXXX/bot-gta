@@ -79,7 +79,7 @@ class CowPage(QtWidgets.QWidget):
             worker_factory=CowWorker,
             log_output=self.log_output,
             extra_signals={"counter_signal": self._update_counter},
-            worker_kwargs={"hotkey": self.hotkey_input.text().strip() or 'f5', "pause_delay": self.pause_slider.value() / 10.0}
+            worker_kwargs={"hotkey": self.hotkey_input.text().strip() or 'f5', "pause_delay": self.pause_slider.value() / 100.0}
         )
 
     def _update_counter(self, value: int):
@@ -89,7 +89,7 @@ class CowWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     counter_signal = QtCore.pyqtSignal(int)
 
-    def __init__(self, pause_delay=0, hotkey: str = 'f5'):
+    def __init__(self, hotkey: str = 'f5', pause_delay: float = 0.07):
         super().__init__()
         self.running = True
         self._count = 0
@@ -100,7 +100,7 @@ class CowWorker(QtCore.QThread):
             pass
         self.templates = load_images("cow", mapping={"1.png": "1", "2.png": "2"}, as_cv2=True)
         self.monitor = auto_detect_region(width_ratio=1.0, height_ratio=0.65, top_ratio=0.35)
-        self.pause_delay = 0.04
+        self.pause_delay = pause_delay
         self._stop = threading.Event()
         self._auto_e_enabled = False
         self.min_press_interval = 0

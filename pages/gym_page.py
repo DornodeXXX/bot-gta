@@ -37,9 +37,19 @@ class GymPage(QtWidgets.QWidget):
         hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
             default="f5", description="— вкл/выкл автонажатие E"
         )
+
+        food_bind, self.food_bind = CommonLogger.create_hotkey_input(
+            default="k", description="— клавиша еды"
+        )
+
+        food_pause_layout, self.pause_slider, self.min_label = CommonLogger.create_slider_row(
+            "Время паузы еды:", minimum=1, maximum=3600, default=50, suffix="сек", step=1
+        )
         
         layout.addLayout(hotkey_layout)
-        
+        layout.addLayout(food_bind)
+        layout.addLayout(food_pause_layout)
+
         layout.addWidget(self.counter_label)
         layout.addStretch()
 
@@ -47,10 +57,14 @@ class GymPage(QtWidgets.QWidget):
 
     def _load_settings(self):
         self.hotkey_input.setText(self.settings.get("gym", "hotkey_port", "f5"))
+        self.food_bind.setText(self.settings.get("gym", "food_bind", "k"))
+        self.pause_slider.setValue(self.settings.get("gym", "pause", 1800))
 
     def _save_settings(self):
         self.settings.save_group("gym", {
-            "hotkey_port": self.hotkey_input.text()
+            "pause": self.pause_slider.value(),
+            "hotkey_port": self.hotkey_input.text(),
+            "food_bind": self.food_bind.text()
         })
 
     def handle_toggle(self):
@@ -60,7 +74,7 @@ class GymPage(QtWidgets.QWidget):
             worker_factory=GymWorker,
             log_output=self.log_output,
             extra_signals={"counter_signal": self._update_counter},
-            worker_kwargs={"hotkey": self.hotkey_input.text().strip() or 'f5'}
+            worker_kwargs={"hotkey": self.hotkey_input.text().strip() or 'f5', "pause_delay": self.pause_slider.value(),"key_food": self.food_bind.text().strip() or 'k'}
         )
 
     def _update_counter(self, value: int):
@@ -77,11 +91,27 @@ class GymWorker(QtCore.QThread):
     V_TOL = 0   #яркость
 
     MIN_AREA = 50
-    
-    def __init__(self, monitor: dict = None, hotkey: str = 'f5'):
+
+
+    eng_to_rus = {
+        'q': 'й', 'w': 'ц', 'e': 'у', 'r': 'к', 't': 'е', 'y': 'н', 'u': 'г',
+        'i': 'ш', 'o': 'щ', 'p': 'з', '[': 'х', ']': 'ъ',
+        'a': 'ф', 's': 'ы', 'd': 'в', 'f': 'а', 'g': 'п', 'h': 'р', 'j': 'о',
+        'k': 'л', 'l': 'д', ';': 'ж', "'": 'э',
+        'z': 'я', 'x': 'ч', 'c': 'с', 'v': 'м', 'b': 'и', 'n': 'т', 'm': 'ь',
+        ',': 'б', '.': 'ю', '/': '.'
+    }
+
+    def __init__(self, monitor: dict = None, hotkey: str = 'f5', pause_delay: float = 0.0, key_food: str = 'k'):
         super().__init__()
         self.running = True
         self._count = 0
+        self.pause_delay = pause_delay
+        self.key_food = key_food
+        lower = self.key_food.lower()
+        self.rus_key = self.eng_to_rus.get(lower, self.key_food)
+        if self.key_food.isupper():
+            self.rus_key = self.rus_key.upper()
         self.monitor = monitor or auto_detect_region(reference_height=1440, reference_top=560)
         self._hotkey = (hotkey or 'f5').lower().strip()
         self._hotkey_id = None
@@ -149,13 +179,20 @@ class GymWorker(QtCore.QThread):
                         self.log(f"Круг найден, нажимаем пробел")
                         self.keyboard_controller.tap(Key.space)
 
-                    if not found and self._auto_e_enabled:
+                    if not found:
                         now = time.time()
-                        if now - self._last_e_time >= 5.0:
-                            self.keyboard_controller.tap('e')
-                            self.keyboard_controller.tap('у')
-                            self._last_e_time = now
-                            self.log("Нажата 'E' (авто)")
+                        if now - getattr(self, "_last_k_time", 0) >= self.pause_delay:
+                            self.keyboard_controller.tap(self.key_food)
+                            self.keyboard_controller.tap(self.rus_key)
+                            self._last_k_time = now
+                            self.log(f"Нажата {self.key_food} (еда)")
+                        if self._auto_e_enabled:
+                            now = time.time()
+                            if now - self._last_e_time >= 5.0:
+                                self.keyboard_controller.tap('e')
+                                self.keyboard_controller.tap('у')
+                                self._last_e_time = now
+                                self.log("Нажата 'E' (авто)")
 
                     was_found = found
 

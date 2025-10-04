@@ -5,7 +5,7 @@ import pyautogui
 import cv2
 import numpy as np
 import mss
-from widgets.common import CommonLogger, ScriptController, auto_detect_region, load_images
+from widgets.common import CommonLogger, ScriptController, auto_detect_region, load_images, SettingsManager
 import os
 import threading
 import time, threading, sys
@@ -16,7 +16,9 @@ class DemorganPage(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.worker: DemorganWorker | None = None
+        self.settings = SettingsManager()
         self._init_ui()
+        self._load_settings()
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -31,6 +33,16 @@ class DemorganPage(QtWidgets.QWidget):
         switch_layout.addWidget(self.switch)
         layout.addLayout(switch_layout)
 
+        tokar_pause, self.tokar_pause_slider, self.min_label = CommonLogger.create_slider_row(
+            "Время сигнала токаря:", minimum=30, maximum=80, default=65, suffix="сек", step=1
+        )
+
+        shveika_pause, self.shveika_pause_slider, self.min_label = CommonLogger.create_slider_row(
+            "Время сигнала швейки:", minimum=60, maximum=100, default=85, suffix="сек", step=1
+        )
+
+        layout.addLayout(tokar_pause)
+        layout.addLayout(shveika_pause)
         self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
         self.counter_label.setObjectName("counter_label")
         layout.addWidget(self.counter_label)
@@ -38,14 +50,24 @@ class DemorganPage(QtWidgets.QWidget):
 
         self.log_output = CommonLogger.create_log_field(layout)
 
+    def _load_settings(self):
+        self.tokar_pause_slider.setValue(self.settings.get("demorgan", "tokar_pause", 65))
+        self.shveika_pause_slider.setValue(self.settings.get("demorgan", "shveika_pause", 85))
+
+    def _save_settings(self):
+        self.settings.save_group("demorgan", {
+            "tokar_pause": self.tokar_pause_slider.value(),
+            "shveika_pause": self.shveika_pause_slider.value(),
+        })
+
     def handle_toggle(self):
+        self._save_settings()
         ScriptController.toggle_script(
             widget=self,
-            worker_factory=lambda: DemorganWorker(),
+            worker_factory=DemorganWorker,
             log_output=self.log_output,
-            extra_signals={
-                "counter_signal": self._update_counter
-            }
+            extra_signals={"counter_signal": self._update_counter},
+            worker_kwargs={"tokar_pause": self.tokar_pause_slider.value(), "shveika_pause": self.shveika_pause_slider.value()}
         )
 
     def _update_counter(self, value: int):
@@ -86,10 +108,12 @@ class DemorganWorker(QtCore.QThread):
         self.timer_thread.log_signal.connect(self.log)
         self.timer_thread.start()
 
-    def __init__(self, width_ratio=0.5, height_ratio=0.6, top_ratio=0.25):
+    def __init__(self, width_ratio=0.5, height_ratio=0.6, top_ratio=0.25, tokar_pause: float = 0.0, shveika_pause: float = 0.0):
         super().__init__()
         self.running = True
         self._count = 0
+        self.tokar_pause = tokar_pause
+        self.shveika_pause = shveika_pause
         self.last_known_position = None
         self.template = self._load_template()
         self.monitor = auto_detect_region(width_ratio, height_ratio, top_ratio)
@@ -170,7 +194,7 @@ class DemorganWorker(QtCore.QThread):
                     coords = self._locate_all_20(image_bgr, self.CONFIDENCE)
 
                     if all(coords):
-                        self.start_timer(65, "Швейка")
+                        self.start_timer(self.shveika_pause, "Швейка")
                         self._count += 1
                         self.counter_signal.emit(self._count)
                         self.log(f"[✓] Все 20 точек найдены. Начинаю клик.")
@@ -248,7 +272,7 @@ class DemorganWorker(QtCore.QThread):
 
                     if found and not self.is_tracking:
                         print("Элемент найден. Работа начата!")
-                        self.start_timer(64, "Токарь")
+                        self.start_timer(self.tokar_pause, "Токарь")
                         self.is_tracking = True
 
                     if not found:
