@@ -13,6 +13,34 @@ def main():
     font.setPointSize(10)
     app.setFont(font)
 
+    class FocusRemover(QtCore.QObject):
+        def eventFilter(self, obj, event):
+            if event.type() in (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonRelease):
+                try:
+                    pos = event.globalPos()
+                except Exception:
+                    pos = None
+                clicked = QtWidgets.QApplication.widgetAt(pos) if pos is not None else None
+                focused = QtWidgets.QApplication.focusWidget()
+                if isinstance(focused, QtWidgets.QLineEdit):
+                    if clicked is None:
+                        focused.clearFocus()
+                    else:
+                        w = clicked
+                        inside = False
+                        while w is not None:
+                            if w is focused:
+                                inside = True
+                                break
+                            w = w.parent()
+                        if not inside:
+                            focused.clearFocus()
+            return super().eventFilter(obj, event)
+            
+    _focus_remover = FocusRemover()
+    app.installEventFilter(_focus_remover)
+    app._focus_remover = _focus_remover
+
     palette = QtGui.QPalette()
     palette.setColor(QtGui.QPalette.Window, QtGui.QColor(COLORS["bg"]))
     palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(COLORS["text"]))
