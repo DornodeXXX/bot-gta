@@ -14,7 +14,7 @@ class TitleBar(QtWidgets.QWidget):
         self.icon_label.setAlignment(QtCore.Qt.AlignCenter)
         self.icon_label.setFixedSize(25, 25)
 
-        self.title_label = QtWidgets.QLabel("BOT [GTA5RP]")
+        self.title_label = QtWidgets.QLabel("BOT [GTA5RP] 🎄")
         
         self.btn_min = QtWidgets.QPushButton("–")
         self.btn_close = QtWidgets.QPushButton("✕")
