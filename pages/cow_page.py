@@ -1,5 +1,4 @@
 from PyQt5 import QtWidgets, QtCore
-from widgets.switch_button import SwitchButton
 import time
 import keyboard
 import cv2
@@ -7,7 +6,7 @@ import numpy as np
 import mss
 import os
 from pynput.keyboard import Controller
-from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region, load_images
+from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region, load_images, CommonUI
 import threading
 
 class CowPage(QtWidgets.QWidget):
@@ -22,45 +21,28 @@ class CowPage(QtWidgets.QWidget):
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
-        switch_layout = QtWidgets.QHBoxLayout()
-        self.switch = SwitchButton()
+
+        header, self.switch = CommonUI.create_switch_header("Коровы", "🐄")
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
+        layout.addLayout(header)
 
-        switch_layout.addWidget(CommonLogger._make_label("Коровы", 16))
-        switch_layout.addStretch()
-        switch_layout.addWidget(self.switch)
-        layout.addLayout(switch_layout)
-        
-        self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
-        
-        hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
-            default="f5", description="— вкл/выкл автонажатие E"
-        )
+        settings_group, settings_layout = CommonUI.create_settings_group()
 
-        settings_group = QtWidgets.QGroupBox("")
-        settings_group.setStyleSheet("QGroupBox { color: white; font-weight: bold; background: none; }")
+        hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(default="f5", description="— вкл/выкл автонажатие E")
+        pause_layout, self.pause_slider = CommonUI.create_slider_row("Время паузы:", minimum=0.07, maximum=5, default=0.07, suffix="сек", step=0.01)
 
-        settings_layout = QtWidgets.QVBoxLayout()
-        settings_layout.setSpacing(10)
-        settings_layout.setContentsMargins(10, 10, 10, 10)
+        self.counter_label = CommonUI.create_counter()
 
-        pause_layout, self.pause_slider, self.min_label = CommonLogger.create_slider_row(
-            "Время паузы:", minimum=0.07, maximum=5, default=0.07, suffix="сек", step=0.01
-        )
-
-        settings_group.setStyleSheet("background: none;")
-        settings_group.setLayout(settings_layout)
-
+        settings_layout.addLayout(hotkey_layout)
         settings_layout.addLayout(pause_layout)
-        layout.addLayout(hotkey_layout)
-        layout.addWidget(settings_group)
-        layout.addWidget(self.counter_label)
-        layout.addStretch()
-        
-        CommonLogger.create_slider_row
+        settings_layout.addWidget(self.counter_label)
 
-        self.log_output = CommonLogger.create_log_field(layout)
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
+        layout.addStretch()
+
+        self.log_output = CommonUI.add_log_field(layout)
         
     def _load_settings(self):
         self.hotkey_input.setText(self.settings.get("cow", "hotkey_port", "f5"))
@@ -118,9 +100,6 @@ class CowWorker(QtCore.QThread):
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
-
-    def _tap(self, key: str):
-        keyboard.press_and_release(key)
 
     def run(self):
         self.hotkey_manager.register()
