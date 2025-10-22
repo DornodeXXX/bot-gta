@@ -1,7 +1,5 @@
 from PyQt5 import QtWidgets, QtCore, QtGui, QtNetwork
 from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QDesktopServices
-
 
 class IndexPage(QtWidgets.QWidget):
     def __init__(self, version):
@@ -9,21 +7,39 @@ class IndexPage(QtWidgets.QWidget):
         self.setStyleSheet("background-color: rgba(26, 26, 30, 180);")
 
         layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(20, 15, 20, 15)
+        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setSpacing(15)
 
-        title = QtWidgets.QLabel("📇 Главная")
-        title.setStyleSheet("color: white; font-size: 24px; font-weight: bold; background: none;")
+        title = QtWidgets.QLabel("🏠 Главная")
+        title.setStyleSheet("""
+            color: white;
+            font-size: 26px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            background: none;
+        """)
         layout.addWidget(title)
-        layout.addSpacing(5)
-
+        
         description = QtWidgets.QLabel(
-            "🎮 Добро пожаловать в BOT [GTA5RP]!\n\n"
-            "🔨 Этот инструмент предназначен для автоматизации задач в игре GTA5RP на платформе RAGE Multiplayer.\n\n"
-            "📁 Выберите нужный модуль из меню сверху.\n\n"
-            "⚠️ Использование данного ПО может нарушать правила сервера.\nИспользуйте на свой страх и риск."
+            "🎮 <b>Добро пожаловать в BOT [GTA5RP]!</b><br><br>"
+            "Этот мощный инструмент поможет вам <span style='color:#00ffcc;'>автоматизировать рутину</span> "
+            "в <b>GTA5RP</b> на платформе <b>RAGE Multiplayer</b>.<br><br>"
+            "⚙️ <u>Ключевые фичи:</u><br>"
+            "• Автоматизация повторяющихся задач<br>"
+            "• Интуитивный и стильный интерфейс<br>"
+            "• Полная кастомизация под ваш стиль игры<br>"
+            "• Регулярные обновления и поддержка<br><br>"
+            "📁 Перейдите в меню сверху и выберите модуль — и вперёд к доминации!<br><br>"
+            "⚠️ <i>Внимание: использование может нарушать правила сервера. Играйте умно!</i><br><br>"
         )
+        
         description.setWordWrap(True)
-        description.setStyleSheet("color: lightgray; font-size: 14px; background: none;")
+        description.setStyleSheet("""
+            color: lightgray;
+            font-size: 14px;
+            background: none;
+            line-height: 1.5em;
+        """)
         layout.addWidget(description)
         layout.addStretch(1)
 
@@ -31,22 +47,35 @@ class IndexPage(QtWidgets.QWidget):
 
         left_container = QtWidgets.QVBoxLayout()
         left_container.setContentsMargins(0, 0, 0, 0)
+        left_container.setSpacing(8)
 
         telegram_row = QtWidgets.QHBoxLayout()
-        telegram_row.setContentsMargins(0, 0, 0, 0)
-
         telegram_icon = QtWidgets.QLabel()
-        telegram_icon.setPixmap(QtGui.QPixmap("assets/tg.png").scaled(16, 16, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+        pixmap = QtGui.QPixmap("assets/tg.png")
+        pixmap = pixmap.scaled(18, 18, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        telegram_icon.setPixmap(pixmap)
+        telegram_icon.setStyleSheet("background: transparent;")
         telegram_row.addWidget(telegram_icon)
 
         telegram_link = QtWidgets.QLabel(
-            '<a href="https://t.me/id3001" style="color: #0088cc; text-decoration: none;">Telegram - @id3001</a>'
+            '<a href="https://t.me/id3001" '
+            'style="color:#0088cc; text-decoration:none; font-size:14px;">'
+            'Telegram — <b>@id3001</b></a>'
         )
-        telegram_link.setOpenExternalLinks(False)
-        telegram_link.linkActivated.connect(lambda: QDesktopServices.openUrl(QUrl("https://t.me/id3001")))
-        telegram_link.setStyleSheet("color: #0088cc; font-size: 14px; background: none;padding-right:50px;")
+        telegram_link.setTextFormat(QtCore.Qt.RichText)
+        telegram_link.setOpenExternalLinks(True)
+        telegram_link.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        telegram_link.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: #0088cc;
+            }
+            a {
+                color: #0088cc;
+                text-decoration: none;
+            }
+        """)
         telegram_row.addWidget(telegram_link)
-
         left_container.addLayout(telegram_row)
 
         self.online_label = QtWidgets.QLabel("🌐 Запусков сегодня: ...")
