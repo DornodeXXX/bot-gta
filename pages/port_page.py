@@ -1,9 +1,8 @@
 from PyQt5 import QtWidgets, QtCore
-from widgets.switch_button import SwitchButton
 import keyboard
 import pyautogui
 from pynput.keyboard import Controller
-from widgets.common import CommonLogger, ScriptController, SettingsManager, auto_detect_region
+from widgets.common import CommonLogger, ScriptController, SettingsManager, auto_detect_region, CommonUI
 import threading
 
 class PortPage(QtWidgets.QWidget):
@@ -18,27 +17,27 @@ class PortPage(QtWidgets.QWidget):
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
-        switch_layout = QtWidgets.QHBoxLayout()
-        self.switch = SwitchButton()
+
+        header, self.switch = CommonUI.create_switch_header("Порт", "⚓")
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
-        
-        switch_layout.addWidget(CommonLogger._make_label("Порт", 16))
-        switch_layout.addStretch()
-        switch_layout.addWidget(self.switch)
-        layout.addLayout(switch_layout)
-        
-        self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
+        layout.addLayout(header)
 
-        hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
+        settings_group, settings_layout = CommonUI.create_settings_group()
+
+        hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(
             default="f5", description="— вкл/выкл автонажатие Shift+W"
         )
-        
-        layout.addLayout(hotkey_layout)
-        layout.addWidget(self.counter_label)
+        self.counter_label = CommonUI.create_counter()
+
+        settings_layout.addLayout(hotkey_layout)
+        settings_layout.addWidget(self.counter_label)
+
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
         layout.addStretch()
-        
-        self.log_output = CommonLogger.create_log_field(layout)
+
+        self.log_output = CommonUI.add_log_field(layout)
 
     def _load_settings(self):
         self.hotkey_input.setText(self.settings.get("port", "hotkey_port", "f5"))
@@ -61,7 +60,6 @@ class PortPage(QtWidgets.QWidget):
 
     def _update_counter(self, value: int):
         self.counter_label.setText(f"Счётчик: {value}")
-
 
 class PortWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
@@ -160,6 +158,10 @@ class PortWorker(QtCore.QThread):
                     self._count += 1
                     self.log(f"[✓] Найдена мини-игра — нажимаем E (#{self._count})")
                     self.counter_signal.emit(self._count)
+                    self.current_actions = self._count
+                    self.hud_update_signal.emit({
+                        "Действий": self.current_actions
+                    })
                     self.keyboard_controller.tap('e')
                     self.keyboard_controller.tap('у')
                     self._stop.wait(0.5)
