@@ -1,9 +1,7 @@
 from PyQt5 import QtWidgets, QtCore
-from widgets.switch_button import SwitchButton
 import pyautogui
-import time
 import os
-from widgets.common import CommonLogger, ScriptController
+from widgets.common import CommonLogger, ScriptController, CommonUI
 import threading
 
 BASE_ASSETS_PATH = "assets/cook/"
@@ -49,31 +47,23 @@ class GotovkaPage(QtWidgets.QWidget):
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
-        switch_layout = QtWidgets.QHBoxLayout()
-        self.switch = SwitchButton()
+
+        header, self.switch = CommonUI.create_switch_header("Готовка", "🍜")
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
+        layout.addLayout(header)
 
-        switch_layout.addWidget(CommonLogger._make_label("Готовка", 16))
-        switch_layout.addStretch()
-        switch_layout.addWidget(self.switch)
-        layout.addLayout(switch_layout)
+        settings_group, settings_layout = CommonUI.create_settings_group()
 
-        dish_layout = QtWidgets.QHBoxLayout()
-        dish_label = QtWidgets.QLabel("Выберите блюдо:")
-        dish_label.setStyleSheet("color: white; font-size: 14px; background: none;")
+        dish_layout, self.dish_combo = CommonUI.create_combo("Выберите блюдо:", list(RECIPES.keys()))
+        settings_layout.addLayout(dish_layout)
 
-        self.dish_combo = QtWidgets.QComboBox()
-        self.dish_combo.addItems(list(RECIPES.keys()))
-        self.dish_combo.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
-
-        dish_layout.addWidget(dish_label)
-        dish_layout.addWidget(self.dish_combo)
-        dish_layout.addStretch()
-        layout.addLayout(dish_layout)
-
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
         layout.addStretch()
-        self.log_output = CommonLogger.create_log_field(layout)
+
+        self.log_output = CommonUI.add_log_field(layout)
+
 
     def handle_toggle(self):
         selected_dish = self.dish_combo.currentText()
