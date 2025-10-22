@@ -1,55 +1,56 @@
-from PyQt5 import QtWidgets, QtCore
-from widgets.switch_button import SwitchButton
 import time
 import pyautogui
 import cv2
 import numpy as np
 import mss
-from widgets.common import CommonLogger, ScriptController, auto_detect_region, load_images, SettingsManager
-import os
+from widgets.common import CommonLogger, ScriptController, auto_detect_region, load_images, SettingsManager, OverlayWindow, CheckWithTooltip,CommonUI
 import threading
-import time, threading, sys
+import time, threading
 import winsound
+from PyQt5 import QtWidgets, QtCore
 
 class DemorganPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
+
     def __init__(self):
         super().__init__()
         self.worker: DemorganWorker | None = None
         self.settings = SettingsManager()
         self._init_ui()
         self._load_settings()
+        self.hud = OverlayWindow(
+            title="Деморган",
+            fields={"Действий": 0},
+            f_keys="F1",
+            auto_monitor=False
+        )
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
-        switch_layout = QtWidgets.QHBoxLayout()
-        self.switch = SwitchButton()
+
+        header, self.switch = CommonUI.create_switch_header("Деморган", "⛓")
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
-        
-        switch_layout.addWidget(CommonLogger._make_label("Деморган", 16))
-        switch_layout.addStretch()
-        switch_layout.addWidget(self.switch)
-        layout.addLayout(switch_layout)
+        layout.addLayout(header)
 
-        tokar_pause, self.tokar_pause_slider, self.min_label = CommonLogger.create_slider_row(
-            "Время сигнала токаря:", minimum=30, maximum=80, default=65, suffix="сек", step=1
-        )
+        settings_group, settings_layout = CommonUI.create_settings_group()
 
-        shveika_pause, self.shveika_pause_slider, self.min_label = CommonLogger.create_slider_row(
-            "Время сигнала швейки:", minimum=60, maximum=100, default=85, suffix="сек", step=1
-        )
+        tokar_layout, self.tokar_pause_slider = CommonUI.create_slider_row("Время сигнала токаря:", minimum=30, maximum=80, default=65, suffix="сек", step=1)
+        shveika_layout, self.shveika_pause_slider = CommonUI.create_slider_row("Время сигнала швейки:", minimum=60, maximum=100, default=85, suffix="сек", step=1)
 
-        layout.addLayout(tokar_pause)
-        layout.addLayout(shveika_pause)
-        self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
-        self.counter_label.setObjectName("counter_label")
-        layout.addWidget(self.counter_label)
+        self.checkoverlay = CheckWithTooltip("Оверлей - BETA", "Оверлей показывает интерфейс поверх всех окон игры.")
+
+        settings_layout.addLayout(tokar_layout)
+        settings_layout.addLayout(shveika_layout)
+        settings_layout.addWidget(self.checkoverlay)
+
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
         layout.addStretch()
 
-        self.log_output = CommonLogger.create_log_field(layout)
-
+        self.log_output = CommonUI.add_log_field(layout)
+        
     def _load_settings(self):
         self.tokar_pause_slider.setValue(self.settings.get("demorgan", "tokar_pause", 65))
         self.shveika_pause_slider.setValue(self.settings.get("demorgan", "shveika_pause", 85))
@@ -62,20 +63,35 @@ class DemorganPage(QtWidgets.QWidget):
 
     def handle_toggle(self):
         self._save_settings()
+        is_starting = self.switch.isChecked()
+
         ScriptController.toggle_script(
             widget=self,
             worker_factory=DemorganWorker,
             log_output=self.log_output,
-            extra_signals={"counter_signal": self._update_counter},
-            worker_kwargs={"tokar_pause": self.tokar_pause_slider.value(), "shveika_pause": self.shveika_pause_slider.value()}
+            worker_kwargs={"tokar_pause": self.tokar_pause_slider.value(), "shveika_pause": self.shveika_pause_slider.value()},
+            extra_signals = {
+                "hud_update_signal": lambda data: self.hud.update_values(**data)
+            }
         )
 
-    def _update_counter(self, value: int):
-        self.counter_label.setText(f"Счётчик: {value}")
+        if is_starting:
+            if self.checkoverlay.isChecked():
+                self.hud.start_monitor()
+                self.hud.show()
+            else:
+                self.hud.stop_monitor()
+                self.hud.close()
+        else:
+            self.hud.stop_monitor()
+            self.hud.close()
+
+
 
 class TimerWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     finished_signal = QtCore.pyqtSignal()
+    hud_update_signal = QtCore.pyqtSignal(dict)
 
     def __init__(self, seconds: int, label: str):
         super().__init__()
@@ -89,9 +105,13 @@ class TimerWorker(QtCore.QThread):
             left = self.seconds - int(time.time() - start)
             mins, secs = divmod(left, 60)
             self.log_signal.emit(f"[⏳] Таймер: осталось {mins:02d}:{secs:02d}")
+            self.hud_update_signal.emit({
+                "Сдавать через": f"{mins:02d}:{secs:02d}"
+            })
             time.sleep(1)
         if self.running:
             self.log_signal.emit(f"[✔] {self.label} таймер завершён!")
+            self.hud_update_signal.emit({"Сдавать через": None})
             winsound.Beep(1000, 200)
             self.finished_signal.emit()
 
@@ -101,22 +121,27 @@ class TimerWorker(QtCore.QThread):
 class DemorganWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
     counter_signal = QtCore.pyqtSignal(int)
+    hud_update_signal = QtCore.pyqtSignal(dict)
+    
     CONFIDENCE = 0.95
 
     def start_timer(self, seconds: int, label: str):
         self.timer_thread = TimerWorker(seconds, label)
         self.timer_thread.log_signal.connect(self.log)
+        self.timer_thread.hud_update_signal.connect(self.hud_update_signal)
         self.timer_thread.start()
 
     def __init__(self, width_ratio=0.5, height_ratio=0.6, top_ratio=0.25, tokar_pause: float = 0.0, shveika_pause: float = 0.0):
         super().__init__()
         self.running = True
+        self.timer_thread = None
         self._count = 0
         self.tokar_pause = tokar_pause
         self.shveika_pause = shveika_pause
         self.last_known_position = None
         self.template = self._load_template()
         self.monitor = auto_detect_region(width_ratio, height_ratio, top_ratio)
+        self.monitor2 = auto_detect_region(0.5, 0.8, 0.1)
         self._stop = threading.Event()
         self.image_paths = load_images("shveika", count=20)
         self.shveika_templates = self._load_shveika_templates(self.image_paths)
@@ -158,11 +183,11 @@ class DemorganWorker(QtCore.QThread):
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         if max_val >= threshold:
             h, w = templ_bgr.shape[:2]
-            center = (max_loc[0] + w // 2 + self.monitor["left"],
-                      max_loc[1] + h // 2 + self.monitor["top"])
+            center = (max_loc[0] + w // 2 + self.monitor2["left"],
+                      max_loc[1] + h // 2 + self.monitor2["top"])
             return center, max_val
         return None, max_val
-
+        
     def _locate_all_20(self, image_bgr, threshold):
         coords = []
         for templ in self.shveika_templates:
@@ -180,7 +205,7 @@ class DemorganWorker(QtCore.QThread):
                         self._stop.wait(0.05)
                         continue
 
-                    frame = np.array(sct.grab(self.monitor))
+                    frame = np.array(sct.grab(self.monitor2))
                     image_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
                     sentinel_center, sentinel_score = self._locate_one(image_bgr, sentinel_tem, self.sentinel_threshold)
 
@@ -198,7 +223,11 @@ class DemorganWorker(QtCore.QThread):
                         self._count += 1
                         self.counter_signal.emit(self._count)
                         self.log(f"[✓] Все 20 точек найдены. Начинаю клик.")
-
+                        self.current_actions = self._count
+                        self.hud_update_signal.emit({
+                            "Действий": self.current_actions,
+                            "Сейчас": "Швейка",
+                        })
                         for i, pos in enumerate(coords):
                             if not self.running:
                                 break
