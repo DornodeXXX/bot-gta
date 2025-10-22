@@ -5,6 +5,23 @@ from .status_dot import StatusPulseDot
 class ModuleButton(QtWidgets.QFrame):
     clicked = QtCore.pyqtSignal()
 
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        snow_height = 15
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(QtCore.QRectF(0, 0, self.width(), snow_height), 14, 14)
+
+        gradient = QtGui.QLinearGradient(0, 0, 0, snow_height)
+        gradient.setColorAt(0.0, QtGui.QColor(255, 255, 255, 230))
+        gradient.setColorAt(0.6, QtGui.QColor(255, 255, 255, 60))
+        gradient.setColorAt(1.0, QtCore.Qt.transparent)
+
+        painter.fillPath(path, gradient)
+
     def __init__(self, title: str, emoji: str, right_indicator: StatusPulseDot):
         super().__init__()
         self._active = False
@@ -59,7 +76,7 @@ class ModuleButton(QtWidgets.QFrame):
             }
         """)
 
-        ttitle = QtWidgets.QLabel(title)
+        ttitle = QtWidgets.QLabel(f"{title}")
         ttitle.setStyleSheet("color: %s; font-size: 15px; font-weight: 600;" % COLORS["text"])
 
         subtitle = QtWidgets.QLabel("Модуль")
