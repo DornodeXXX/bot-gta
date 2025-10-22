@@ -2,13 +2,11 @@ from PyQt5 import QtWidgets, QtCore
 import random
 import threading
 import os
-import sys
 import pyautogui
 import keyboard
 from typing import Optional, Tuple, Callable
 import time
-from widgets.common import CommonLogger, ScriptController, SettingsManager
-from widgets.switch_button import SwitchButton
+from widgets.common import CommonLogger, ScriptController, SettingsManager, CheckWithTooltip, CommonUI
 import vgamepad as vg
 
 BASE_ASSETS_PATH = "assets/spin/"
@@ -26,72 +24,32 @@ class AntiAfkPage(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
 
-        self.switch = SwitchButton()
+        header, self.switch = CommonUI.create_switch_header("Анти-АФК", "🕹️")
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
+        layout.addLayout(header)
 
-        self.checkwheel = QtWidgets.QCheckBox('Авто Колесо — раз в 5 мин', self)
-        self.checkwheel.setGeometry(20, 85, 200, 20)
-        self.checkwheel.setCursor(QtCore.Qt.PointingHandCursor)
-        self.checkwheel.setStyleSheet("""
-            QCheckBox {
-                color: white;
-            }
+        settings_group, settings_layout = CommonUI.create_settings_group()
 
-            QCheckBox::indicator {
-                width: 15px;
-                height: 15px;
-                border: 1px solid #ffffff;
-                background: transparent;
-            }
-
-            QCheckBox::indicator:checked {
-                border: 1px solid #0A84FF;
-                background-color: #0A84FF;
-                image: url(assets/check.png);
-            }
-        """)
-
-        switch_layout = QtWidgets.QHBoxLayout()
-        switch_layout.addWidget(CommonLogger._make_label("Анти-АФК", 16))
-        switch_layout.addStretch()
-        switch_layout.addWidget(self.checkwheel)
-        switch_layout.addWidget(self.switch)
-        layout.addLayout(switch_layout)
-
-        settings_group = QtWidgets.QGroupBox("")
-        settings_group.setStyleSheet("QGroupBox { color: white; font-weight: bold; background: none; }")
-        settings_layout = QtWidgets.QVBoxLayout()
-        settings_layout.setSpacing(10)
-        settings_layout.setContentsMargins(10, 10, 10, 10)
-
-        settings_layout.addWidget(CommonLogger._make_label("Время зажатия:", 17))
-        min_delay_row, self.min_delay_slider, self.min_label = CommonLogger.create_slider_row(
-            "Мин. зажатие:", minimum=0.5, maximum=10, default=0.5, step=0.1
-        )
-        max_delay_row, self.max_delay_slider, self.max_label = CommonLogger.create_slider_row(
-            "Макс. зажатие:", minimum=0.5, maximum=10, default=2.5, step=0.1
-        )
+        self.checkwheel = CheckWithTooltip("Авто Колесо", "Раз в 5 мин.")
+        settings_layout.addWidget(CommonUI._make_label("Время зажатия:", 17))
+        min_delay_row, self.min_delay_slider = CommonUI.create_slider_row("Мин. зажатие:", 0.5, 10, 0.5, step=0.1)
+        max_delay_row, self.max_delay_slider = CommonUI.create_slider_row("Макс. зажатие:", 0.5, 10, 2.5, step=0.1)
         settings_layout.addLayout(min_delay_row)
         settings_layout.addLayout(max_delay_row)
 
-        settings_layout.addWidget(CommonLogger._make_label("Пауза между движениями:", 17))
-        min_pause_row, self.min_pause_slider, self.min_pause_label = CommonLogger.create_slider_row(
-            "Мин. пауза:", minimum=0.5, maximum=10, default=8, step=0.1
-        )
-        max_pause_row, self.max_pause_slider, self.max_pause_label = CommonLogger.create_slider_row(
-            "Макс. пауза:", minimum=0.5, maximum=10, default=10, step=0.1
-        )
+        settings_layout.addWidget(CommonUI._make_label("Пауза между движениями:", 17))
+        min_pause_row, self.min_pause_slider = CommonUI.create_slider_row("Мин. пауза:", 0.5, 10, 8)
+        max_pause_row, self.max_pause_slider = CommonUI.create_slider_row("Макс. пауза:", 0.5, 10, 10)
         settings_layout.addLayout(min_pause_row)
         settings_layout.addLayout(max_pause_row)
+        settings_layout.addWidget(self.checkwheel)
 
         settings_group.setLayout(settings_layout)
-
         layout.addWidget(settings_group)
         layout.addStretch()
 
-        self.log_output = CommonLogger.create_log_field(layout)
-        self.setLayout(layout)
+        self.log_output = CommonUI.add_log_field(layout)
 
     def _load_settings(self):
         self.min_delay_slider.setValue(self.settings.get("anti_afk", "min_delay", 5))
@@ -158,11 +116,19 @@ class AntiAfkWorker(QtCore.QThread):
             'down_left': (-20000, -20000),
             'center': (0, 0)
         }
+        if self.checkwheel:
+            self.roulette_thread = RouletteThread(interval=300)
+            self.roulette_thread.trigger.connect(self.perform_roulette_spin)
+        else:
+            self.roulette_thread = None
 
     def log(self, message: str):
         CommonLogger.log(message, self.log_signal)
 
     def close(self):
+        if self.roulette_thread:
+            self.roulette_thread.stop()
+            self.roulette_thread.wait()
         if self.gamepad:
             try:
                 self.gamepad.reset()
@@ -236,6 +202,8 @@ class AntiAfkWorker(QtCore.QThread):
     def run(self):
         self.log("[→] Скрипт анти-АФК запущен.")
         try:
+            if self.roulette_thread:
+                self.roulette_thread.start()
             self.gamepad.reset()
             self.gamepad.update()
             while self.running and not self._stop.is_set():
@@ -258,11 +226,6 @@ class AntiAfkWorker(QtCore.QThread):
                 if self._stop.wait(pause_time):
                     break
 
-                current_time = time.time()
-                if self.checkwheel and (current_time - self.last_roulette_spin_time >= 300):
-                    self.perform_roulette_spin()
-                    self.last_roulette_spin_time = current_time
-
         except Exception as e:
             self.log(f"[Ошибка] {e}")
         finally:
@@ -272,3 +235,20 @@ class AntiAfkWorker(QtCore.QThread):
             except Exception:
                 pass
             self.close()
+
+class RouletteThread(QtCore.QThread):
+    trigger = QtCore.pyqtSignal()
+
+    def __init__(self, interval=10, parent=None):
+        super().__init__(parent)
+        self.interval = interval
+        self._stop_event = threading.Event()
+
+    def run(self):
+        while not self._stop_event.is_set():
+            if self._stop_event.wait(self.interval):
+                break
+            self.trigger.emit()
+
+    def stop(self):
+        self._stop_event.set()
