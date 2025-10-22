@@ -1,13 +1,10 @@
 from PyQt5 import QtWidgets, QtCore
-from widgets.switch_button import SwitchButton
 import time
-import keyboard
-import pyautogui
 import cv2
 import numpy as np
 from pynput.keyboard import Key, Controller
 import mss
-from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region
+from widgets.common import CommonLogger, ScriptController, HotkeyManager, SettingsManager, auto_detect_region,CommonUI
 
 class GymPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -22,38 +19,31 @@ class GymPage(QtWidgets.QWidget):
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 15, 20, 15)
-        switch_layout = QtWidgets.QHBoxLayout()
-        self.switch = SwitchButton()
+
+        header, self.switch = CommonUI.create_switch_header("Качалка", "🏋️")
         self.switch.clicked.connect(self.handle_toggle)
         self.switch.clicked.connect(self.statusChanged.emit)
+        layout.addLayout(header)
 
-        switch_layout.addWidget(CommonLogger._make_label("Качалка", 16))
-        switch_layout.addStretch()
-        switch_layout.addWidget(self.switch)
-        layout.addLayout(switch_layout)
+        settings_group, settings_layout = CommonUI.create_settings_group()
 
-        self.counter_label = CommonLogger._make_label("Счётчик: 0", 14)
-        
-        hotkey_layout, self.hotkey_input = CommonLogger.create_hotkey_input(
-            default="f5", description="— вкл/выкл автонажатие E"
-        )
+        hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(default="f5", description="— вкл/выкл автонажатие E")
+        food_bind, self.food_bind = CommonUI.create_hotkey_input(default="k", description="— клавиша еды")
+        food_pause_layout, self.pause_slider = CommonUI.create_slider_row("Время паузы еды:", 1, 3600, 50, step=1)
 
-        food_bind, self.food_bind = CommonLogger.create_hotkey_input(
-            default="k", description="— клавиша еды"
-        )
+        self.counter_label = CommonUI.create_counter()
 
-        food_pause_layout, self.pause_slider, self.min_label = CommonLogger.create_slider_row(
-            "Время паузы еды:", minimum=1, maximum=3600, default=50, suffix="сек", step=1
-        )
-        
-        layout.addLayout(hotkey_layout)
-        layout.addLayout(food_bind)
-        layout.addLayout(food_pause_layout)
+        settings_layout.addLayout(hotkey_layout)
+        settings_layout.addLayout(food_bind)
+        settings_layout.addLayout(food_pause_layout)
+        settings_layout.addWidget(self.counter_label)
 
-        layout.addWidget(self.counter_label)
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
         layout.addStretch()
 
-        self.log_output = CommonLogger.create_log_field(layout)
+        self.log_output = CommonUI.add_log_field(layout)
+
 
     def _load_settings(self):
         self.hotkey_input.setText(self.settings.get("gym", "hotkey_port", "f5"))
