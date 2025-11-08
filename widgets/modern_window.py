@@ -104,7 +104,7 @@ class UpdateChecker(QtCore.QObject):
             self.finished.emit()
 
 class ModernWindow(QtWidgets.QMainWindow):
-    CURRENT_VERSION = "3.3"
+    CURRENT_VERSION = "3.5"
 
     def __init__(self):
         super().__init__()
