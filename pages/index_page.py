@@ -50,6 +50,7 @@ class IndexPage(QtWidgets.QWidget):
         left_container.setSpacing(8)
 
         telegram_row = QtWidgets.QHBoxLayout()
+        vpn_row = QtWidgets.QHBoxLayout()
         telegram_icon = QtWidgets.QLabel()
         pixmap = QtGui.QPixmap("assets/tg.png")
         pixmap = pixmap.scaled(18, 18, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
@@ -77,6 +78,27 @@ class IndexPage(QtWidgets.QWidget):
         """)
         telegram_row.addWidget(telegram_link)
         left_container.addLayout(telegram_row)
+
+        vpn_link = QtWidgets.QLabel(
+            '🛡️   <a href="https://t.me/vpnGLOBALKINTEK_bot" '
+            'style="color:#0088cc; text-decoration:none; font-size:14px;">'
+            '<b> Мой VPN</b></a>'
+        )
+        vpn_link.setTextFormat(QtCore.Qt.RichText)
+        vpn_link.setOpenExternalLinks(True)
+        vpn_link.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        vpn_link.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: #0088cc;
+            }
+            a {
+                color: #0088cc;
+                text-decoration: none;
+            }
+        """)
+        vpn_row.addWidget(vpn_link)
+        left_container.addLayout(vpn_row)
 
         self.online_label = QtWidgets.QLabel("🌐 Запусков сегодня: ...")
         self.online_label.setStyleSheet("color: lightgray; font-size: 14px; background: none;")
