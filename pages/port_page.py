@@ -159,9 +159,6 @@ class PortWorker(QtCore.QThread):
                     self.log(f"[✓] Найдена мини-игра — нажимаем E (#{self._count})")
                     self.counter_signal.emit(self._count)
                     self.current_actions = self._count
-                    self.hud_update_signal.emit({
-                        "Действий": self.current_actions
-                    })
                     self.keyboard_controller.tap('e')
                     self.keyboard_controller.tap('у')
                     self._stop.wait(0.5)
