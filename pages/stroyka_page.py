@@ -1,8 +1,9 @@
 from PyQt5 import QtWidgets, QtCore
-from widgets.common import CommonLogger, ScriptController, load_images, CommonUI
+from widgets.common import CommonLogger, ScriptController, load_images, CommonUI, SettingsManager
 from pynput.keyboard import Controller
 import time
 import threading
+import keyboard
 
 class StroykaPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -10,7 +11,9 @@ class StroykaPage(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.worker = None
+        self.settings = SettingsManager()
         self._init_ui()
+        self._load_settings()
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -22,8 +25,10 @@ class StroykaPage(QtWidgets.QWidget):
         layout.addLayout(header)
 
         settings_group, settings_layout = CommonUI.create_settings_group()
+        hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(default="f5", description="— вкл/выкл автонажатие Shift+W")
         self.counter = CommonUI.create_counter()
 
+        settings_layout.addLayout(hotkey_layout)
         settings_layout.addWidget(self.counter)
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
@@ -31,8 +36,16 @@ class StroykaPage(QtWidgets.QWidget):
 
         self.log_output = CommonUI.add_log_field(layout)
 
+    def _load_settings(self):
+        self.hotkey_input.setText(self.settings.get("stroyka", "hotkey_stroyka", "f5"))
+
+    def _save_settings(self):
+        self.settings.save_group("stroyka", {
+            "hotkey_stroyka": self.hotkey_input.text()
+        })
+
     def handle_toggle(self):
-        worker_factory = lambda: StroykaWorker()
+        worker_factory = lambda: StroykaWorker(self.hotkey_input.text())
         extra_signals = {
             "counter_signal": self._update_counter
         }
@@ -51,7 +64,7 @@ class StroykaWorker(QtCore.QThread):
     counter_signal = QtCore.pyqtSignal(int)
     CONFIDENCE = 0.95
 
-    def __init__(self):
+    def __init__(self, hotkey: str = "f5"):
         super().__init__()
         self.running = False
         self.count = 0
@@ -67,9 +80,17 @@ class StroykaWorker(QtCore.QThread):
         self._visible = {p: False for p in self.img_key}
         self.keyboard_controller = Controller()
         self.detection_cache = {}
+        self._toggle_requested = False
+        self._move_enabled = False
+        self.hotkey = hotkey or "f5"
+
+        keyboard.add_hotkey(self.hotkey, self._request_toggle_move)
 
     def log(self, message: str):
         self.log_signal.emit(message)
+
+    def _request_toggle_move(self):
+        self._toggle_requested = True
 
     def safe_locate(self, path: str):
         current_time = time.time()
@@ -83,8 +104,36 @@ class StroykaWorker(QtCore.QThread):
     def run(self):
         self.running = True
         self.log("Поиск начат.")
+        rage_window_missing = True
         try:
             while self.running:
+                if not CommonLogger.is_rage_mp_active():
+                    if self._move_enabled:
+                        keyboard.release("shift")
+                        keyboard.release("w")
+                        self._move_enabled = False
+                        self.log("[■] Движение отключено (Shift+W отпущены)")
+                    if rage_window_missing:
+                        self.log("Окно RAGE Multiplayer не активно. Ожидание...")
+                        rage_window_missing = False
+                    self._stop.wait(1)
+                    continue
+
+                if not rage_window_missing:
+                    self.log("Окно RAGE Multiplayer найдено.")
+                    rage_window_missing = True
+
+                if self._toggle_requested:
+                    self._move_enabled = not self._move_enabled
+                    if self._move_enabled:
+                        keyboard.press("shift")
+                        keyboard.press("w")
+                        self.log("[→] Движение включено (Shift+W зажаты)")
+                    else:
+                        keyboard.release("shift")
+                        keyboard.release("w")
+                        self.log("[■] Движение отключено (Shift+W отпущены)")
+                    self._toggle_requested = False
                 start_time = time.time()
                 for path, keys in self.img_key.items():
                     if self.safe_locate(path):
