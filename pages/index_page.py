@@ -39,6 +39,7 @@ class IndexPage(QtWidgets.QWidget):
             font-size: 14px;
             background: none;
             line-height: 1.5em;
+            font-family: 'Inter', sans-serif;
         """)
         layout.addWidget(description)
         layout.addStretch(1)

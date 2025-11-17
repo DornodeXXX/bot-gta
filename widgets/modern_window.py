@@ -1,9 +1,6 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
 from functools import partial
-import urllib.request
-import urllib.error
 import webbrowser
-from packaging import version
 from widgets import COLORS, ModuleButton, TitleBar, StatusPulseDot
 from pages.index_page import IndexPage
 from pages.port_page import PortPage
@@ -12,6 +9,7 @@ from pages.stroyka_page import StroykaPage
 from pages.gotovka_page import GotovkaPage
 from pages.cow_page import CowPage
 from pages.gym_page import GymPage
+from pages.settings import SettingsPage
 from pages.demorgan_page import DemorganPage
 import random
 import math
@@ -84,27 +82,28 @@ class SnowWidget(QtWidgets.QWidget):
 
 class UpdateChecker(QtCore.QObject):
     update_available = QtCore.pyqtSignal(str)
-    finished = QtCore.pyqtSignal()
 
     def __init__(self, current_version):
         super().__init__()
         self.current_version = current_version
+        self.manager = QtNetwork.QNetworkAccessManager()
+        self.manager.finished.connect(self._on_response)
 
-    @QtCore.pyqtSlot()
     def check(self):
-        try:
-            version_url = "https://raw.githubusercontent.com/DornodeXXX/bot-gta/main/version.txt"
-            with urllib.request.urlopen(version_url, timeout=5) as response:
-                latest_version_str = response.read().decode('utf-8').strip()
-                if version.parse(latest_version_str) > version.parse(self.current_version):
-                    self.update_available.emit(latest_version_str)
-        except (urllib.error.URLError, ValueError) as e:
-            print(f"Could not check for updates: {e}")
-        finally:
-            self.finished.emit()
+        url = QtCore.QUrl("https://raw.githubusercontent.com/DornodeXXX/bot-gta/main/version.txt")
+        request = QtNetwork.QNetworkRequest(url)
+        self.manager.get(request)
+
+    def _on_response(self, reply):
+        if reply.error() == QtNetwork.QNetworkReply.NoError:
+            latest_version_str = bytes(reply.readAll()).decode().strip()
+            from packaging import version
+            if version.parse(latest_version_str) > version.parse(self.current_version):
+                self.update_available.emit(latest_version_str)
+        reply.deleteLater()
 
 class ModernWindow(QtWidgets.QMainWindow):
-    CURRENT_VERSION = "3.5"
+    CURRENT_VERSION = "3.7"
 
     def __init__(self):
         super().__init__()
@@ -143,10 +142,6 @@ class ModernWindow(QtWidgets.QMainWindow):
         self.snow_widget.show()
 
         self.container.installEventFilter(self)
-
-        wrapper = QtWidgets.QWidget()
-        wrapper.setLayout(root_layout)
-        self.setCentralWidget(wrapper)
 
         main_layout = QtWidgets.QVBoxLayout(self.container)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -206,7 +201,10 @@ class ModernWindow(QtWidgets.QMainWindow):
                 continue
 
             indicator = StatusPulseDot(QtGui.QColor(COLORS["accent"]))
-            button = ModuleButton(title, emoji, indicator)
+
+            is_settings = (title == "Настройки")
+
+            button = ModuleButton(title, emoji, indicator, is_settings_button=is_settings)
             button.clicked.connect(partial(self.on_module_clicked, button, page_cls))
             
             row, col = divmod(i, max_columns)
@@ -224,6 +222,7 @@ class ModernWindow(QtWidgets.QMainWindow):
         
         return grid_widget
 
+
     def _get_modules(self):
         return [
             ("Главная", "🏠", IndexPage, True),
@@ -234,6 +233,7 @@ class ModernWindow(QtWidgets.QMainWindow):
             ("Качалка", "🏋️", GymPage, True),
             ("Кулинария", "🍜", GotovkaPage, True),
             ("Анти-АФК", "🕹️", AntiAfkPage, True),
+            ("Настройки", "⚙️", SettingsPage, True),
         ]
 
     def _handle_status_change(self, page_index: int, status: bool):
@@ -249,18 +249,9 @@ class ModernWindow(QtWidgets.QMainWindow):
             self.stack.setCurrentWidget(self._page_map[page_cls])
 
     def _start_update_check(self):
-        self.thread = QtCore.QThread(self)
         self.checker = UpdateChecker(self.CURRENT_VERSION)
-        self.checker.moveToThread(self.thread)
-
-        self.thread.started.connect(self.checker.check)
         self.checker.update_available.connect(self._handle_update)
-        self.checker.finished.connect(self.thread.quit)
-
-        self.thread.finished.connect(self.checker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-
-        self.thread.start()
+        self.checker.check()
 
     @QtCore.pyqtSlot(str)
     def _handle_update(self, latest_version_str):

@@ -1,6 +1,7 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtMultimedia import QSoundEffect
 from .theme import COLORS
+from widgets.common import SettingsManager
 from .status_dot import StatusPulseDot
 import os, time, sys
 from PyQt5 import QtMultimedia
@@ -60,7 +61,7 @@ class ModuleButton(QtWidgets.QFrame):
         gradient.setColorAt(1.0, QtCore.Qt.transparent)
         painter.fillPath(path, gradient)
 
-    def __init__(self, title: str, emoji: str, right_indicator: StatusPulseDot):
+    def __init__(self, title: str, emoji: str, right_indicator: StatusPulseDot, is_settings_button=False):
         super().__init__()
         self._active = False
         self._indicator = right_indicator
@@ -69,7 +70,8 @@ class ModuleButton(QtWidgets.QFrame):
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setFixedHeight(73)
         self.setMinimumWidth(100)
-
+        self.settings = SettingsManager()
+        self.is_settings_button = is_settings_button
         self.setObjectName("moduleCard")
         self.setStyleSheet("""
             QFrame#moduleCard {
@@ -142,24 +144,40 @@ class ModuleButton(QtWidgets.QFrame):
 
         hover_path = resource_path(os.path.join("assets", "hover.wav"))
         click_path = resource_path(os.path.join("assets", "click.wav"))
+        settings_click_path = resource_path(os.path.join("assets", "settings.wav"))
+        hover_state = self.settings.get("settings", "switch_hover", True)
+        click_state = self.settings.get("settings", "switch_click", True)
+        volume_hover = self.settings.get("settings", "volume_hover", 35)
+        volume_click = self.settings.get("settings", "volume_click", 45)
 
-        if os.path.exists(hover_path):
-            ModuleButton._hover_sound_player = QtMultimedia.QMediaPlayer()
-            ModuleButton._hover_sound_player.setMedia(
+        ModuleButton._hover_sound_enabled = hover_state
+        ModuleButton._click_sound_enabled = click_state
+
+        self.hover_sound_player = None
+        if hover_state and os.path.exists(hover_path):
+            self.hover_sound_player = QtMultimedia.QMediaPlayer()
+            self.hover_sound_player.setMedia(
                 QtMultimedia.QMediaContent(QtCore.QUrl.fromLocalFile(hover_path))
             )
-            ModuleButton._hover_sound_player.setVolume(35)
+            self.hover_sound_player.setVolume(int(volume_hover))
         else:
-            print(f"[⚠️] Файл {hover_path} не найден — звук наведения отключён.")
+            if not hover_state:
+                print("[ℹ️] Звук наведения отключён.")
+            elif not os.path.exists(hover_path):
+                print(f"[⚠️] Файл {hover_path} не найден.")
 
-        if os.path.exists(click_path):
-            ModuleButton._click_sound_player = QtMultimedia.QMediaPlayer()
-            ModuleButton._click_sound_player.setMedia(
-                QtMultimedia.QMediaContent(QtCore.QUrl.fromLocalFile(click_path))
-            )
-            ModuleButton._click_sound_player.setVolume(45)
-        else:
-            print(f"[⚠️] Файл {click_path} не найден — звук клика отключён.")
+        self.click_sound_player = None
+        if click_state:
+            sound_file = settings_click_path if self.is_settings_button else click_path
+            if os.path.exists(sound_file):
+                self.click_sound_player = QtMultimedia.QMediaPlayer()
+                self.click_sound_player.setMedia(
+                    QtMultimedia.QMediaContent(QtCore.QUrl.fromLocalFile(sound_file))
+                )
+                self.click_sound_player.setVolume(int(volume_click))
+            else:
+                print(f"[⚠️] Файл {sound_file} не найден.")
+
 
     def enterEvent(self, e: QtCore.QEvent):
         self.anim_shadow.stop()
@@ -174,11 +192,13 @@ class ModuleButton(QtWidgets.QFrame):
         """ % COLORS)
 
         now = time.time()
-        if ModuleButton._hover_sound_player is not None and now - ModuleButton._last_hover_time > 0.15:
-            ModuleButton._last_hover_time = now
-            ModuleButton._hover_sound_player.stop()
-            ModuleButton._hover_sound_player.play()
+        if self.hover_sound_player is not None and now - getattr(self, "_last_hover_time", 0) > 0.15:
+            self._last_hover_time = now
+            self.hover_sound_player.stop()
+            self.hover_sound_player.play()
+
         super().enterEvent(e)
+
 
     def leaveEvent(self, e: QtCore.QEvent):
         self.anim_shadow.stop()
@@ -205,9 +225,9 @@ class ModuleButton(QtWidgets.QFrame):
 
     def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
         if e.button() == QtCore.Qt.LeftButton:
-            if ModuleButton._click_sound_player is not None:
-                ModuleButton._click_sound_player.stop()
-                ModuleButton._click_sound_player.play()
+            if self.click_sound_player is not None:
+                self.click_sound_player.stop()
+                self.click_sound_player.play()
 
             self.clicked.emit()
             if self.rect().contains(e.pos()):

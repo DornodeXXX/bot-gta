@@ -29,7 +29,7 @@ class GymPage(QtWidgets.QWidget):
 
         hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(default="f5", description="— вкл/выкл автонажатие E")
         food_bind, self.food_bind = CommonUI.create_hotkey_input(default="k", description="— клавиша еды")
-        food_pause_layout, self.pause_slider = CommonUI.create_slider_row("Время паузы еды:", 1, 3600, 50, step=1)
+        food_pause_layout, self.pause_slider, self.get_pause_slider = CommonUI.create_slider_row("Время паузы еды:", 1, 3600, 50, step=1)
 
         self.counter_label = CommonUI.create_counter()
 

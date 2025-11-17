@@ -531,12 +531,29 @@ class CommonUI:
     @staticmethod
     def create_settings_group(title: str = "", spacing: int = 10, margins=(10, 10, 10, 10)):
         group = QtWidgets.QGroupBox(title)
-        group.setStyleSheet("QGroupBox { color: white; font-weight: bold; background: none; }")
+        group.setAlignment(QtCore.Qt.AlignHCenter)
+        group.setStyleSheet("""
+            QGroupBox {
+                color: white;
+                font-weight: bold;
+                background: none;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 2px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+                color: #ffcc66;
+            }
+        """)
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(spacing)
         layout.setContentsMargins(*margins)
         group.setLayout(layout)
         return group, layout
+
 
     @staticmethod
     def create_switch_header(label_text: str, icon: str = "", font_size: int = 16):
@@ -586,35 +603,36 @@ class CommonUI:
         return lbl
     
     @staticmethod
-    def create_slider_row(title: str, minimum: int, maximum: int, default: float, suffix: str = "сек", step: float = 0.1):
+    def create_slider_row(title: str, minimum: float, maximum: float, default: float, suffix: str = "сек", step: float = 0.1):
         layout = QtWidgets.QHBoxLayout()
         layout.setSpacing(5)
-
-        factor = int(1 / step)
+        factor = 1 / step 
 
         label = QtWidgets.QLabel(title)
         label.setStyleSheet("color: white;")
-        
+
         slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         slider.setMinimum(int(minimum * factor))
         slider.setMaximum(int(maximum * factor))
-        slider.setValue(int(default * factor)) 
-        
+        slider.setValue(int(default * factor))
         slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         value_label = QtWidgets.QLabel(f"{default:.2f} {suffix}")
         value_label.setStyleSheet("color: white;")
-        
+
         def update_label(val):
             value_label.setText(f"{val / factor:.2f} {suffix}")
-            
+
         slider.valueChanged.connect(update_label)
 
         layout.addWidget(label)
         layout.addWidget(slider)
         layout.addWidget(value_label)
 
-        return layout, slider
+        def get_value():
+            return slider.value() / factor
+
+        return layout, slider, get_value
 
     @staticmethod
     def create_hotkey_input(default: str = "f5", description: str = "— вкл/выкл автонажатие E"):

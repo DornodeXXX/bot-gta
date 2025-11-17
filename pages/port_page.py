@@ -25,9 +25,7 @@ class PortPage(QtWidgets.QWidget):
 
         settings_group, settings_layout = CommonUI.create_settings_group()
 
-        hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(
-            default="f5", description="— вкл/выкл автонажатие Shift+W"
-        )
+        hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(default="f5", description="— вкл/выкл автонажатие Shift+W")
         self.counter_label = CommonUI.create_counter()
 
         settings_layout.addLayout(hotkey_layout)
