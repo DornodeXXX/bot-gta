@@ -6,8 +6,26 @@ import mss
 from widgets.common import CommonLogger, ScriptController, auto_detect_region, load_images, SettingsManager, OverlayWindow, CheckWithTooltip,CommonUI
 import threading
 import time, threading
-import winsound
 from PyQt5 import QtWidgets, QtCore
+import os, time, sys
+from PyQt5 import QtMultimedia
+
+def resource_path(relative_path: str) -> str:
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.path.join(base_path, relative_path)
+
+def play_beep(self):
+    timer_path = resource_path(os.path.join("assets", "beep.wav"))
+    if os.path.exists(timer_path):
+        self.sound_player = QtMultimedia.QMediaPlayer() 
+        self.sound_player.setMedia(QtMultimedia.QMediaContent(QtCore.QUrl.fromLocalFile(timer_path)))
+        self.sound_player.setVolume(100)
+        self.sound_player.play()
+    else:
+        print(f"[⚠️] Файл {timer_path} не найден.")
 
 class DemorganPage(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(bool)
@@ -36,13 +54,15 @@ class DemorganPage(QtWidgets.QWidget):
 
         settings_group, settings_layout = CommonUI.create_settings_group()
 
-        tokar_layout, self.tokar_pause_slider = CommonUI.create_slider_row("Время сигнала токаря:", minimum=30, maximum=80, default=65, suffix="сек", step=1)
-        shveika_layout, self.shveika_pause_slider = CommonUI.create_slider_row("Время сигнала швейки:", minimum=60, maximum=100, default=85, suffix="сек", step=1)
+        tokar_layout, self.tokar_pause_slider, self.get_tokar_pause = CommonUI.create_slider_row("Время сигнала токаря:", minimum=30, maximum=80, default=65, suffix="сек", step=1)
+        shveika_layout, self.shveika_pause_slider, self.get_shveika_pause = CommonUI.create_slider_row("Время сигнала швейки:", minimum=60, maximum=100, default=85, suffix="сек", step=1)
+        shveika_exe_layout, self.shveika_exe_slider, self.get_tokar_pause = CommonUI.create_slider_row("Время между действиями:", minimum=0, maximum=4, default=0, suffix="сек", step=0.1)
 
         self.checkoverlay = CheckWithTooltip("Оверлей - BETA", "Оверлей показывает интерфейс поверх всех окон игры.")
 
         settings_layout.addLayout(tokar_layout)
         settings_layout.addLayout(shveika_layout)
+        settings_layout.addLayout(shveika_exe_layout)
         settings_layout.addWidget(self.checkoverlay)
 
         settings_group.setLayout(settings_layout)
@@ -54,12 +74,16 @@ class DemorganPage(QtWidgets.QWidget):
     def _load_settings(self):
         self.tokar_pause_slider.setValue(self.settings.get("demorgan", "tokar_pause", 65))
         self.shveika_pause_slider.setValue(self.settings.get("demorgan", "shveika_pause", 85))
+        self.shveika_exe_slider.setValue(int(self.settings.get("demorgan", "shveika_exe", 0)*10))
 
     def _save_settings(self):
         self.settings.save_group("demorgan", {
             "tokar_pause": self.tokar_pause_slider.value(),
             "shveika_pause": self.shveika_pause_slider.value(),
+            "shveika_exe": self.get_tokar_pause(),
         })
+
+
 
     def handle_toggle(self):
         self._save_settings()
@@ -69,7 +93,9 @@ class DemorganPage(QtWidgets.QWidget):
             widget=self,
             worker_factory=DemorganWorker,
             log_output=self.log_output,
-            worker_kwargs={"tokar_pause": self.tokar_pause_slider.value(), "shveika_pause": self.shveika_pause_slider.value()},
+            worker_kwargs={"tokar_pause": self.tokar_pause_slider.value(), 
+                           "shveika_pause": self.shveika_pause_slider.value(), 
+                           "shveika_exe": self.get_tokar_pause()},
             extra_signals = {
                 "hud_update_signal": lambda data: self.hud.update_values(**data)
             }
@@ -85,8 +111,6 @@ class DemorganPage(QtWidgets.QWidget):
         else:
             self.hud.stop_monitor()
             self.hud.close()
-
-
 
 class TimerWorker(QtCore.QThread):
     log_signal = QtCore.pyqtSignal(str)
@@ -112,7 +136,7 @@ class TimerWorker(QtCore.QThread):
         if self.running:
             self.log_signal.emit(f"[✔] {self.label} таймер завершён!")
             self.hud_update_signal.emit({"Сдавать через": None})
-            winsound.Beep(1000, 200)
+            play_beep(self)
             self.finished_signal.emit()
 
     def stop(self):
@@ -131,13 +155,14 @@ class DemorganWorker(QtCore.QThread):
         self.timer_thread.hud_update_signal.connect(self.hud_update_signal)
         self.timer_thread.start()
 
-    def __init__(self, width_ratio=0.5, height_ratio=0.6, top_ratio=0.25, tokar_pause: float = 0.0, shveika_pause: float = 0.0):
+    def __init__(self, width_ratio=0.5, height_ratio=0.6, top_ratio=0.25, tokar_pause: float = 0.0, shveika_pause: float = 0.0, shveika_exe: float = 0.0):
         super().__init__()
         self.running = True
         self.timer_thread = None
         self._count = 0
         self.tokar_pause = tokar_pause
         self.shveika_pause = shveika_pause
+        self.shveika_exe = shveika_exe
         self.last_known_position = None
         self.template = self._load_template()
         self.monitor = auto_detect_region(width_ratio, height_ratio, top_ratio)
@@ -236,7 +261,7 @@ class DemorganWorker(QtCore.QThread):
                                 self.log(f"[Клик] {i+1}/20: {pos} (1 раз)")
                             else:
                                 pyautogui.click(pos)
-                                self._stop.wait(0.05)
+                                self._stop.wait(self.shveika_exe)
                                 pyautogui.click(pos)
                                 self.log(f"[Клик] {i+1}/20: {pos} (2 раза)")
                         self._stop.wait(0.03)
