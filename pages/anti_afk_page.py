@@ -31,18 +31,17 @@ class AntiAfkPage(QtWidgets.QWidget):
 
         settings_group, settings_layout = CommonUI.create_settings_group()
 
-        self.checkwheel = CheckWithTooltip("Авто Колесо", "Раз в 5 мин.")
-        settings_layout.addWidget(CommonUI._make_label("Время зажатия:", 17))
-        min_delay_row, self.min_delay_slider = CommonUI.create_slider_row("Мин. зажатие:", 0.5, 10, 0.5, step=0.1)
-        max_delay_row, self.max_delay_slider = CommonUI.create_slider_row("Макс. зажатие:", 0.5, 10, 2.5, step=0.1)
+        min_delay_row, self.min_delay_slider, self.get_min_delay_slider = CommonUI.create_slider_row("Мин. время зажатие:", 0.5, 10, 0.5, step=0.1)
+        max_delay_row, self.max_delay_slider, self.get_max_delay_slider = CommonUI.create_slider_row("Макс. время зажатие:", 0.5, 10, 2.5, step=0.1)
         settings_layout.addLayout(min_delay_row)
         settings_layout.addLayout(max_delay_row)
 
-        settings_layout.addWidget(CommonUI._make_label("Пауза между движениями:", 17))
-        min_pause_row, self.min_pause_slider = CommonUI.create_slider_row("Мин. пауза:", 0.5, 10, 8)
-        max_pause_row, self.max_pause_slider = CommonUI.create_slider_row("Макс. пауза:", 0.5, 10, 10)
+        min_pause_row, self.min_pause_slider, self.get_min_pause = CommonUI.create_slider_row("Мин. пауза между движениями:", 0.5, 10, 8)
+        max_pause_row, self.max_pause_slider, self.get_max_pause = CommonUI.create_slider_row("Макс. пауза между движениями:", 0.5, 10, 10)
         settings_layout.addLayout(min_pause_row)
         settings_layout.addLayout(max_pause_row)
+
+        self.checkwheel = CheckWithTooltip("Авто Колесо", "Раз в 5 мин.")
         settings_layout.addWidget(self.checkwheel)
 
         settings_group.setLayout(settings_layout)
