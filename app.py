@@ -4,6 +4,7 @@ from widgets import COLORS, ModernWindow
 
 def main():
     QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("BOT [GTA5RP]")
     app.setStyle("Fusion")
