@@ -30,7 +30,7 @@ class CowPage(QtWidgets.QWidget):
         settings_group, settings_layout = CommonUI.create_settings_group()
 
         hotkey_layout, self.hotkey_input = CommonUI.create_hotkey_input(default="f5", description="— вкл/выкл автонажатие E")
-        pause_layout, self.pause_slider = CommonUI.create_slider_row("Время паузы:", minimum=0.07, maximum=5, default=0.07, suffix="сек", step=0.01)
+        pause_layout, self.pause_slider, self.get_pause_slider = CommonUI.create_slider_row("Время паузы:", minimum=0.07, maximum=5, default=0.07, suffix="сек", step=0.01)
 
         self.counter_label = CommonUI.create_counter()
 
