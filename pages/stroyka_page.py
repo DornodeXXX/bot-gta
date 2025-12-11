@@ -45,6 +45,7 @@ class StroykaPage(QtWidgets.QWidget):
         })
 
     def handle_toggle(self):
+        self._save_settings()
         worker_factory = lambda: StroykaWorker(self.hotkey_input.text())
         extra_signals = {
             "counter_signal": self._update_counter
