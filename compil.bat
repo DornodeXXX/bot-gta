@@ -1,0 +1,1 @@
+python -m nuitka app.py --standalone --follow-imports --enable-plugin=pyqt5 --jobs=4 --windows-console-mode=disable --windows-icon-from-ico=icon.png --windows-uac-admin --output-dir=build_temp --include-data-files=icon.png=icon.png --include-data-files=./vgamepad/win/vigem/client/x64/ViGEmClient.dll=vgamepad/win/vigem/client/x64/ViGEmClient.dll --include-data-dir=assets=assets
